@@ -1,0 +1,179 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 Single Bucket with Path-Based Permissions for File Portal'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'file-portal'
+    Description: 'Base name for the project (will be used for bucket naming)'
+    AllowedPattern: '^[a-z0-9-]+$'
+    ConstraintDescription: 'Must contain only lowercase letters, numbers, and hyphens'
+  
+  CompanyName:
+    Type: String
+    Default: ''
+    Description: 'Optional company name to tag the IAM user'
+    AllowedPattern: '^[a-zA-Z0-9-_\\s]*$'
+
+Resources:
+  # Main S3 Bucket
+  MainBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-bucket'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+            ExposedHeaders: [ETag]
+      VersioningConfiguration:
+        Status: Suspended
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  # IAM User with Path-Based Permissions
+  FilePortalUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub '${ProjectName}-portal-user'
+      Tags:
+        - Key: 'Purpose'
+          Value: 'S3 File Portal Access'
+        - Key: 'Company'
+          Value: !Ref CompanyName
+
+  # IAM Policy for Path-Based Permissions
+  FilePortalPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-portal-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow listing the entire bucket (needed for navigation)
+          - Sid: AllowBucketListing
+            Effect: Allow
+            Action:
+              - 's3:ListBucket'
+            Resource: !GetAtt MainBucket.Arn
+            
+          # Allow read access to all objects in the bucket
+          - Sid: AllowReadAllObjects
+            Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+            Resource: !Sub '${MainBucket.Arn}/*'
+            
+          # Allow upload/write access only to uploads/ folder
+          - Sid: AllowUploadToUploadsFolder
+            Effect: Allow
+            Action:
+              - 's3:PutObject'
+              - 's3:PutObjectAcl'
+              - 's3:DeleteObject'
+            Resource: !Sub '${MainBucket.Arn}/uploads/*'
+            
+          # Allow listing objects in uploads/ folder specifically
+          - Sid: AllowListUploadsFolder
+            Effect: Allow
+            Action:
+              - 's3:ListBucket'
+            Resource: !GetAtt MainBucket.Arn
+            Condition:
+              StringLike:
+                's3:prefix': 
+                  - 'uploads/*'
+      Users:
+        - !Ref FilePortalUser
+
+  # Access Key for the Portal User
+  FilePortalAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref FilePortalUser
+
+Outputs:
+  BucketName:
+    Description: 'Name of the S3 bucket'
+    Value: !Ref MainBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  BucketArn:
+    Description: 'ARN of the S3 bucket'
+    Value: !GetAtt MainBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'
+
+  AccessKeyId:
+    Description: 'Access Key ID for the file portal'
+    Value: !Ref FilePortalAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-AccessKeyId'
+
+  SecretAccessKey:
+    Description: 'Secret Access Key for the file portal'
+    Value: !GetAtt FilePortalAccessKey.SecretAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretAccessKey'
+
+  PortalURL:
+    Description: 'GitHub Pages URL for the file portal'
+    Value: !Sub |
+      https://YOUR-USERNAME.github.io/YOUR-REPO/index.html?bucket=${MainBucket}&key=${FilePortalAccessKey}&secret=${FilePortalAccessKey.SecretAccessKey}&region=${AWS::Region}
+
+  SampleUploadPath:
+    Description: 'Files uploaded through the portal will go to this path'
+    Value: !Sub 's3://${MainBucket}/uploads/'
+
+  BucketStructure:
+    Description: 'Recommended bucket folder structure'
+    Value: !Sub |
+      ${MainBucket}/
+      ├── docs/          (read-only documentation)
+      ├── files/         (read-only shared files)  
+      └── uploads/       (read/write upload area)
+
+# Deployment Instructions:
+# 
+# 1. Deploy the CloudFormation stack:
+#    aws cloudformation create-stack \
+#      --stack-name my-file-portal \
+#      --template-body file://s3-portal-template.yaml \
+#      --parameters ParameterKey=ProjectName,ParameterValue=my-portal \
+#                   ParameterKey=CompanyName,ParameterValue="My Company" \
+#      --capabilities CAPABILITY_NAMED_IAM
+#
+# 2. Get the outputs:
+#    aws cloudformation describe-stacks \
+#      --stack-name my-file-portal \
+#      --query "Stacks[0].Outputs"
+#
+# 3. Upload your HTML file to GitHub Pages
+#
+# 4. Create initial folder structure in S3:
+#    aws s3api put-object --bucket BUCKET-NAME --key docs/ --body /dev/null
+#    aws s3api put-object --bucket BUCKET-NAME --key files/ --body /dev/null  
+#    aws s3api put-object --bucket BUCKET-NAME --key uploads/ --body /dev/null
+#
+# 5. Upload some initial documentation:
+#    aws s3 cp ./README.md s3://BUCKET-NAME/docs/
+#
+# Security Notes:
+# - Only the uploads/ folder allows write access
+# - All other folders are read-only
+# - No public access is granted to the bucket
+# - CORS is configured for browser access
+# - Incomplete multipart uploads are automatically cleaned up after 7 days
