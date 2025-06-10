@@ -59,6 +59,10 @@ Resources:
               - 'kms:ScheduleKeyDeletion'
               - 'kms:CancelKeyDeletion'
               - 'kms:RotateKeyOnDemand'
+              - 'kms:Decrypt'
+              - 'kms:Encrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
             Resource: '*'
             
           # Allow the file portal user to use the key for S3 operations
@@ -87,8 +91,7 @@ Resources:
               StringEquals:
                 'kms:ViaService': !Sub 's3.${AWS::Region}.amazonaws.com'
               StringLike:
-#               'kms:EncryptionContext:aws:s3:arn': !Sub '${MainBucket}/*'
-                kms:EncryptionContext:aws:s3:arn:
+                'kms:EncryptionContext:aws:s3:arn':
                   - !Sub 'arn:aws:s3:::${ProjectName}-bucket/*'
       Tags:
         - Key: 'Name'
@@ -244,6 +247,35 @@ Resources:
     Type: AWS::IAM::AccessKey
     Properties:
       UserName: !Ref FilePortalUser
+
+  # IAM Policy for KMS Admin to have full S3 bucket access
+  S3AdminPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectName}-s3-admin-policy'
+      Description: 'Full access to S3 bucket for KMS admin'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Full S3 bucket access for admin
+          - Sid: AllowFullS3BucketAccess
+            Effect: Allow
+            Action:
+              - 's3:*'
+            Resource: 
+              - !Sub 'arn:aws:s3:::${ProjectName}-bucket'
+              - !Sub 'arn:aws:s3:::${ProjectName}-bucket/*'
+              
+          # CloudWatch logs access for monitoring
+          - Sid: AllowCloudWatchLogsAccess
+            Effect: Allow
+            Action:
+              - 'logs:CreateLogGroup'
+              - 'logs:CreateLogStream'
+              - 'logs:PutLogEvents'
+              - 'logs:DescribeLogGroups'
+              - 'logs:DescribeLogStreams'
+            Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/s3/${ProjectName}-access-logs*'
 
 Outputs:
   BucketName:
