@@ -129,10 +129,10 @@ Outputs:
     Export:
       Name: !Sub '${AWS::StackName}-SecretAccessKey'
 
-  PortalURL:
-    Description: 'GitHub Pages URL for the file portal'
+  GeneratePortalURL:
+    Description: 'Use the build-portal-url.sh script to generate a properly encoded URL'
     Value: !Sub |
-      https://YOUR-USERNAME.github.io/YOUR-REPO/index.html?bucket=${MainBucket}&key=${FilePortalAccessKey}&secret=${FilePortalAccessKey.SecretAccessKey}&region=${AWS::Region}
+      ./build-portal-url.sh -s ${AWS::StackName} -u https://YOUR-USERNAME.github.io/YOUR-REPO/index.html
 
   SampleUploadPath:
     Description: 'Files uploaded through the portal will go to this path'
@@ -156,10 +156,9 @@ Outputs:
 #                   ParameterKey=CompanyName,ParameterValue="My Company" \
 #      --capabilities CAPABILITY_NAMED_IAM
 #
-# 2. Get the outputs:
-#    aws cloudformation describe-stacks \
-#      --stack-name my-file-portal \
-#      --query "Stacks[0].Outputs"
+# 2. Generate the portal URL (handles URL encoding properly):
+#    chmod +x build-portal-url.sh
+#    ./build-portal-url.sh -s my-file-portal -u https://username.github.io/repo/index.html
 #
 # 3. Upload your HTML file to GitHub Pages
 #
@@ -176,4 +175,4 @@ Outputs:
 # - All other folders are read-only
 # - No public access is granted to the bucket
 # - CORS is configured for browser access
-# - Incomplete multipart uploads are automatically cleaned up after 7 days
+# - Incomplete multipart uploads are automatically cleaned up after 7 days"
