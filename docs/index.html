@@ -877,3 +877,27 @@
             statusDiv.className = `status ${type}`;
             
             let icon = '';
+            if (type === 'loading') {
+                icon = '<span class="loading-spinner"></span>';
+            } else if (type === 'success') {
+                icon = '✅ ';
+            } else if (type === 'error') {
+                icon = '❌ ';
+            }
+            
+            statusDiv.innerHTML = icon + message;
+            
+            // Auto-hide success messages after 3 seconds
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusDiv.innerHTML = '';
+                    statusDiv.className = '';
+                }, 3000);
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initializeFromURL);
+    </script>
+</body>
+</html>
