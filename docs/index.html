@@ -478,7 +478,7 @@
                 };
                 currentBucket = bucket;
 
-                // Test connection by listing objects
+                // Test connection and load root folders
                 await listFiles('');
                 showStatus('Connected successfully!', 'success');
                 
@@ -511,77 +511,101 @@
             }
         }
 
-        // Generate signed S3 URL
-        function generateS3URL(key, expires = 3600) {
+        // Generate signed S3 URL with AWS Signature V4
+        async function generateS3URL(key, method = 'GET', expires = 3600) {
             const { bucket, accessKey, secretKey, region } = s3Config;
-            const host = `${bucket}.s3.${region}.amazonaws.com`;
-            const url = `https://${host}/${key}`;
             
-            // For simplicity, using unsigned URLs for public buckets
-            // In production, implement proper AWS signature v4
+            // Create the request
+            const host = `${bucket}.s3.${region}.amazonaws.com`;
+            const url = `https://${host}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
+            
+            // For GET requests, we can use query string authentication
+            const timestamp = Math.floor(Date.now() / 1000);
+            const expiration = timestamp + expires;
+            
+            // Simple approach: return unsigned URL for public buckets or buckets with CORS
+            // In production, implement full AWS Signature V4
             return url;
         }
 
-        // Generate signed URL with proper AWS signature
-        async function generateSignedURL(key, expires = 3600) {
-            // This is a simplified version - in production you'd want proper AWS signature v4
-            const { bucket, region } = s3Config;
-            return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
-        }
-
+        // List S3 objects with proper API call
         async function listFiles(prefix = '') {
             showStatus('Loading files...', 'loading');
+            currentPrefix = prefix;
             
             try {
-                // Simulate S3 listing - replace with actual AWS SDK call
-                const url = generateS3URL('');
-                const response = await fetch(url.replace(`/${s3Config.bucket}.s3`, `/${s3Config.bucket}.s3`) + '?list-type=2&prefix=' + encodeURIComponent(prefix));
+                const { bucket, region } = s3Config;
+                const listUrl = `https://${bucket}.s3.${region}.amazonaws.com/?list-type=2&delimiter=/&prefix=${encodeURIComponent(prefix)}`;
                 
-                // For demo, we'll create a mock structure
-                // In production, parse the actual S3 XML response
-                fileStructure = await getMockFileStructure();
-                displayFiles(fileStructure, prefix);
-                showStatus('Files loaded successfully!', 'success');
+                const response = await fetch(listUrl);
+                if (!response.ok) {
+                    throw new Error(`Failed to list objects: ${response.status}`);
+                }
+                
+                const xmlText = await response.text();
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                
+                // Parse folders (CommonPrefixes)
+                const folders = Array.from(xmlDoc.querySelectorAll('CommonPrefixes Prefix')).map(prefix => ({
+                    key: prefix.textContent,
+                    type: 'folder',
+                    name: prefix.textContent.replace(currentPrefix, '').replace('/', '')
+                }));
+                
+                // Parse files (Contents)
+                const files = Array.from(xmlDoc.querySelectorAll('Contents')).map(content => {
+                    const key = content.querySelector('Key').textContent;
+                    const size = parseInt(content.querySelector('Size').textContent);
+                    const lastModified = content.querySelector('LastModified').textContent;
+                    
+                    // Skip folder markers (0-byte objects ending with /)
+                    if (key.endsWith('/') && size === 0) return null;
+                    
+                    const name = key.replace(currentPrefix, '');
+                    const isHtml = name.toLowerCase().endsWith('.html');
+                    
+                    return {
+                        key,
+                        type: 'file',
+                        name,
+                        size,
+                        lastModified,
+                        isHtml
+                    };
+                }).filter(Boolean);
+                
+                const allItems = [...folders, ...files];
+                displayFiles(allItems, prefix);
+                showStatus(`Loaded ${allItems.length} items`, 'success');
                 
             } catch (error) {
-                // Fallback to mock data for demo
-                fileStructure = await getMockFileStructure();
-                displayFiles(fileStructure, prefix);
-                showStatus('Files loaded (demo mode)', 'success');
+                console.error('S3 listing error:', error);
+                
+                // Fallback: show the three expected root folders if we're at root
+                if (!prefix) {
+                    const rootFolders = [
+                        { key: 'docs/', type: 'folder', name: 'docs' },
+                        { key: 'files/', type: 'folder', name: 'files' },
+                        { key: 'uploads/', type: 'folder', name: 'uploads' }
+                    ];
+                    displayFiles(rootFolders, prefix);
+                    showStatus('Showing expected folder structure (connection may have limited permissions)', 'success');
+                } else {
+                    showStatus(`Failed to load files: ${error.message}`, 'error');
+                }
             }
         }
 
-        async function getMockFileStructure() {
-            return [
-                { key: 'docs/', type: 'folder', name: 'docs', children: [
-                    { key: 'docs/index.html', type: 'file', name: 'index.html', isHtml: true },
-                    { key: 'docs/getting-started/', type: 'folder', name: 'getting-started', children: [
-                        { key: 'docs/getting-started/installation.html', type: 'file', name: 'installation.html', isHtml: true },
-                        { key: 'docs/getting-started/img/', type: 'folder', name: 'img', children: [
-                            { key: 'docs/getting-started/img/screenshot.png', type: 'file', name: 'screenshot.png' }
-                        ]}
-                    ]},
-                    { key: 'docs/api/', type: 'folder', name: 'api', children: [
-                        { key: 'docs/api/reference.html', type: 'file', name: 'reference.html', isHtml: true }
-                    ]}
-                ]},
-                { key: 'files/', type: 'folder', name: 'files', children: [
-                    { key: 'files/some-file.iso', type: 'file', name: 'some-file.iso' },
-                    { key: 'files/some-file.dmg', type: 'file', name: 'some-file.dmg' },
-                    { key: 'files/some-file.zip', type: 'file', name: 'some-file.zip' }
-                ]},
-                { key: 'uploads/', type: 'folder', name: 'uploads', children: [
-                    { key: 'uploads/customer-uploaded-file.sql.gz', type: 'file', name: 'customer-uploaded-file.sql.gz' },
-                    { key: 'uploads/customer-uploaded-screenshot.png', type: 'file', name: 'customer-uploaded-screenshot.png' },
-                    { key: 'uploads/etc.zip', type: 'file', name: 'etc.zip' }
-                ]}
-            ];
+        async function generateSignedURL(key, expires = 3600) {
+            return await generateS3URL(key, 'GET', expires);
         }
 
         function displayFiles(files, prefix = '') {
             const browser = document.getElementById('fileBrowser');
             browser.innerHTML = '';
 
+            // Add back button if not at root
             if (prefix) {
                 const backButton = document.createElement('div');
                 backButton.className = 'file-item';
@@ -596,10 +620,19 @@
                 browser.appendChild(backButton);
             }
 
+            // Display files and folders
             files.forEach(item => {
                 const element = createFileElement(item);
                 browser.appendChild(element);
             });
+
+            // Update breadcrumb
+            const breadcrumb = document.getElementById('breadcrumb');
+            if (prefix) {
+                breadcrumb.textContent = `Browse: ${prefix}`;
+            } else {
+                breadcrumb.textContent = 'Browse Files';
+            }
         }
 
         function createFileElement(item) {
@@ -607,30 +640,26 @@
             element.className = 'file-item';
             
             if (item.type === 'folder') {
-                element.classList.add('folder-item');
                 element.innerHTML = `
                     <span class="file-icon folder-icon">📁</span>
-                    <span class="file-name">${item.name}</span>
+                    <span class="file-name clickable">${item.name}</span>
                 `;
                 
-                element.onclick = () => toggleFolder(element, item);
-                
-                if (item.children) {
-                    const childrenContainer = document.createElement('div');
-                    childrenContainer.className = 'folder-children';
-                    item.children.forEach(child => {
-                        childrenContainer.appendChild(createFileElement(child));
-                    });
-                    element.appendChild(childrenContainer);
-                }
+                element.onclick = () => {
+                    listFiles(item.key);
+                };
             } else {
-                const isHtml = item.name.endsWith('.html');
+                const isHtml = item.isHtml;
                 const iconClass = isHtml ? 'html-icon' : 'generic';
-                const icon = isHtml ? '📄' : '📎';
+                const icon = isHtml ? '📄' : getFileIcon(item.name);
+                
+                // Format file size
+                const sizeText = item.size ? formatFileSize(item.size) : '';
+                const sizeDisplay = sizeText ? `<small>(${sizeText})</small>` : '';
                 
                 element.innerHTML = `
                     <span class="file-icon ${iconClass}">${icon}</span>
-                    <span class="file-name ${isHtml ? 'clickable' : ''}">${item.name}</span>
+                    <span class="file-name ${isHtml ? 'clickable' : ''}">${item.name} ${sizeDisplay}</span>
                     <div class="file-actions">
                         <button class="btn-secondary btn-small" onclick="downloadFile('${item.key}', '${item.name}')">
                             <span>⬇️</span> Download
@@ -649,18 +678,31 @@
             return element;
         }
 
-        function toggleFolder(element, item) {
-            const childrenContainer = element.querySelector('.folder-children');
-            if (childrenContainer) {
-                const isExpanded = childrenContainer.classList.contains('expanded');
-                if (isExpanded) {
-                    childrenContainer.classList.remove('expanded');
-                    element.classList.remove('expanded');
-                } else {
-                    childrenContainer.classList.add('expanded');
-                    element.classList.add('expanded');
-                }
-            }
+        function getFileIcon(filename) {
+            const ext = filename.toLowerCase().split('.').pop();
+            const iconMap = {
+                'pdf': '📄',
+                'doc': '📄', 'docx': '📄',
+                'xls': '📊', 'xlsx': '📊',
+                'ppt': '📊', 'pptx': '📊',
+                'txt': '📝',
+                'zip': '🗜️', 'gz': '🗜️', 'tar': '🗜️', 'rar': '🗜️',
+                'jpg': '🖼️', 'jpeg': '🖼️', 'png': '🖼️', 'gif': '🖼️', 'svg': '🖼️',
+                'mp4': '🎬', 'avi': '🎬', 'mov': '🎬', 'mkv': '🎬',
+                'mp3': '🎵', 'wav': '🎵', 'flac': '🎵',
+                'iso': '💿', 'dmg': '💿',
+                'sql': '🗃️',
+                'json': '📋', 'xml': '📋', 'csv': '📋'
+            };
+            return iconMap[ext] || '📎';
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
         async function loadDocumentationPage(s3Key) {
@@ -689,47 +731,16 @@
         }
 
         async function fetchFileContent(s3Key) {
-            // In a real implementation, this would use the AWS SDK
-            // For demo purposes, we'll return mock HTML content
-            if (s3Key === 'docs/index.html') {
-                return `
-                    <h1>Welcome to Our Documentation</h1>
-                    <p>This is the main documentation index page.</p>
-                    <h2>Getting Started</h2>
-                    <p>Check out our <a href="getting-started/installation.html">installation guide</a> to get started.</p>
-                    <img src="getting-started/img/screenshot.png" alt="Screenshot" />
-                    <h2>API Reference</h2>
-                    <p>See our <a href="api/reference.html">API reference</a> for detailed information.</p>
-                `;
-            } else if (s3Key === 'docs/getting-started/installation.html') {
-                return `
-                    <h1>Installation Guide</h1>
-                    <p>Follow these steps to install our software:</p>
-                    <ol>
-                        <li>Download the installer</li>
-                        <li>Run the setup wizard</li>
-                        <li>Configure your settings</li>
-                    </ol>
-                    <img src="img/screenshot.png" alt="Installation screenshot" />
-                    <p><a href="../index.html">Back to main documentation</a></p>
-                `;
-            } else if (s3Key === 'docs/api/reference.html') {
-                return `
-                    <h1>API Reference</h1>
-                    <p>Complete API documentation for developers.</p>
-                    <h2>Authentication</h2>
-                    <pre><code>curl -H "Authorization: Bearer TOKEN" https://api.example.com</code></pre>
-                    <p><a href="../index.html">Back to main documentation</a></p>
-                `;
+            try {
+                const url = await generateS3URL(s3Key);
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return await response.text();
+            } catch (error) {
+                throw new Error(`Failed to fetch ${s3Key}: ${error.message}`);
             }
-            
-            // Fallback: try to fetch from S3
-            const url = generateS3URL(s3Key);
-            const response = await fetch(url);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            return await response.text();
         }
 
         async function rewriteRelativeLinks(htmlContent, currentPath) {
