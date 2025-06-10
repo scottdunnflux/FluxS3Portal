@@ -132,7 +132,7 @@ Outputs:
   GeneratePortalURL:
     Description: 'Use the build-portal-url.sh script to generate a properly encoded URL'
     Value: !Sub |
-      ./build-portal-url.sh -s ${AWS::StackName} -u https://YOUR-USERNAME.github.io/YOUR-REPO/index.html
+      ./build-portal-url.sh -s ${AWS::StackName} -u https://scottdunnflux.github.io/FluxS3Portal/index.html
 
   SampleUploadPath:
     Description: 'Files uploaded through the portal will go to this path'
