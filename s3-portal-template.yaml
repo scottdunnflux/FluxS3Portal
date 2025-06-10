@@ -175,4 +175,4 @@ Outputs:
 # - All other folders are read-only
 # - No public access is granted to the bucket
 # - CORS is configured for browser access
-# - Incomplete multipart uploads are automatically cleaned up after 7 days"
+# - Incomplete multipart uploads are automatically cleaned up after 7 days
