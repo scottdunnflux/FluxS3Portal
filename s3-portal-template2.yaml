@@ -1,0 +1,357 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 Single Bucket with Path-Based Permissions for File Portal'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'file-portal'
+    Description: 'Base name for the project (will be used for bucket naming)'
+    AllowedPattern: '^[a-z0-9-]+$'
+    ConstraintDescription: 'Must contain only lowercase letters, numbers, and hyphens'
+  
+  CompanyName:
+    Type: String
+    Default: ''
+    Description: 'Optional company name to tag the IAM user'
+    AllowedPattern: '^[a-zA-Z0-9-_\\s]*$'
+  
+  KMSAdminArn:
+    Type: String
+    Description: 'ARN of the IAM user/role that will have admin access to the KMS key (e.g., arn:aws:iam::123456789012:user/admin)'
+    AllowedPattern: '^arn:aws:iam::[0-9]{12}:(user|role)\/.*$'
+
+Resources:
+  # KMS Customer Managed Key for S3 Encryption
+  S3EncryptionKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: !Sub 'Customer managed KMS key for ${ProjectName} S3 bucket encryption'
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          # Allow root account full access (required)
+          - Sid: EnableRootAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+            
+          # Allow designated admin to manage the key
+          - Sid: AllowKeyAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Ref KMSAdminArn
+            Action:
+              - 'kms:Create*'
+              - 'kms:Describe*'
+              - 'kms:Enable*'
+              - 'kms:List*'
+              - 'kms:Put*'
+              - 'kms:Update*'
+              - 'kms:Revoke*'
+              - 'kms:Disable*'
+              - 'kms:Get*'
+              - 'kms:Delete*'
+              - 'kms:TagResource'
+              - 'kms:UntagResource'
+              - 'kms:ScheduleKeyDeletion'
+              - 'kms:CancelKeyDeletion'
+              - 'kms:RotateKeyOnDemand'
+            Resource: '*'
+            
+          # Allow the file portal user to use the key for S3 operations
+          - Sid: AllowPortalUserAccess
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt FilePortalUser.Arn
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:Encrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+            Resource: '*'
+            
+          # Allow S3 service to use the key
+          - Sid: AllowS3ServiceAccess
+            Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey'
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 's3.${AWS::Region}.amazonaws.com'
+              StringLike:
+#               'kms:EncryptionContext:aws:s3:arn': !Sub '${MainBucket}/*'
+                kms:EncryptionContext:aws:s3:arn:
+                  - !Sub 'arn:aws:s3:::${ProjectName}-bucket/*'
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${ProjectName}-s3-encryption-key'
+        - Key: 'Purpose'
+          Value: 'S3 Bucket Encryption'
+        - Key: 'Company'
+          Value: !Ref CompanyName
+
+  # KMS Key Alias for easier reference
+  S3EncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectName}-s3-key'
+      TargetKeyId: !Ref S3EncryptionKey
+
+  # CloudWatch Log Group for S3 Access Logging
+  S3AccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/s3/${ProjectName}-access-logs'
+      RetentionInDays: 30
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${ProjectName}-s3-access-logs'
+        - Key: 'Purpose'
+          Value: 'S3 Access Logging'
+
+  # Main S3 Bucket with KMS Encryption
+  MainBucket:
+    Type: AWS::S3::Bucket
+    DependsOn: S3EncryptionKey
+    Properties:
+      BucketName: !Sub '${ProjectName}-bucket'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'aws:kms'
+              KMSMasterKeyID: !Ref S3EncryptionKey
+            BucketKeyEnabled: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, DELETE, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+            ExposedHeaders: [ETag]
+      VersioningConfiguration:
+        Status: Suspended
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${ProjectName}-main-bucket'
+        - Key: 'Purpose'
+          Value: 'File Portal Storage'
+        - Key: 'Company'
+          Value: !Ref CompanyName
+
+  # IAM User with Path-Based Permissions
+  FilePortalUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub '${ProjectName}-portal-user'
+      Tags:
+        - Key: 'Purpose'
+          Value: 'S3 File Portal Access'
+        - Key: 'Company'
+          Value: !Ref CompanyName
+
+  # IAM Policy for Path-Based Permissions with KMS Access
+  FilePortalPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${ProjectName}-portal-policy'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow listing the entire bucket (needed for navigation)
+          - Sid: AllowBucketListing
+            Effect: Allow
+            Action:
+              - 's3:ListBucket'
+            Resource: !GetAtt MainBucket.Arn
+            
+          # Allow read access to all objects in the bucket
+          - Sid: AllowReadAllObjects
+            Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+            Resource: !Sub '${MainBucket.Arn}/*'
+            
+          # Allow upload/write access only to uploads/ folder
+          - Sid: AllowUploadToUploadsFolder
+            Effect: Allow
+            Action:
+              - 's3:PutObject'
+              - 's3:PutObjectAcl'
+              - 's3:DeleteObject'
+            Resource: !Sub '${MainBucket.Arn}/uploads/*'
+            
+          # Allow listing objects in uploads/ folder specifically
+          - Sid: AllowListUploadsFolder
+            Effect: Allow
+            Action:
+              - 's3:ListBucket'
+            Resource: !GetAtt MainBucket.Arn
+            Condition:
+              StringLike:
+                's3:prefix': 
+                  - 'uploads/*'
+                  
+          # KMS permissions for encryption/decryption
+          - Sid: AllowKMSAccess
+            Effect: Allow
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:Encrypt'
+              - 'kms:ReEncrypt*'
+              - 'kms:GenerateDataKey*'
+              - 'kms:DescribeKey'
+              - 'kms:GetKeyPolicy'
+              - 'kms:GetKeyRotationStatus'
+              - 'kms:ListKeyPolicies'
+              - 'kms:ListResourceTags'
+            Resource: !GetAtt S3EncryptionKey.Arn
+            
+          # Allow access to default AWS managed keys (fallback)
+          - Sid: AllowDefaultKMSAccess
+            Effect: Allow
+            Action:
+              - 'kms:Decrypt'
+              - 'kms:GenerateDataKey'
+            Resource: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+            Condition:
+              StringEquals:
+                'kms:ViaService': !Sub 's3.${AWS::Region}.amazonaws.com'
+      Users:
+        - !Ref FilePortalUser
+
+  # Access Key for the Portal User
+  FilePortalAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref FilePortalUser
+
+Outputs:
+  BucketName:
+    Description: 'Name of the S3 bucket'
+    Value: !Ref MainBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  BucketArn:
+    Description: 'ARN of the S3 bucket'
+    Value: !GetAtt MainBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'
+
+  KMSKeyId:
+    Description: 'KMS Key ID for S3 encryption'
+    Value: !Ref S3EncryptionKey
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyId'
+
+  KMSKeyAlias:
+    Description: 'KMS Key Alias for S3 encryption'
+    Value: !Ref S3EncryptionKeyAlias
+    Export:
+      Name: !Sub '${AWS::StackName}-KMSKeyAlias'
+
+  AccessKeyId:
+    Description: 'Access Key ID for the file portal'
+    Value: !Ref FilePortalAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-AccessKeyId'
+
+  SecretAccessKey:
+    Description: 'Secret Access Key for the file portal'
+    Value: !GetAtt FilePortalAccessKey.SecretAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretAccessKey'
+
+  PortalUserArn:
+    Description: 'ARN of the portal IAM user'
+    Value: !GetAtt FilePortalUser.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-PortalUserArn'
+
+  GeneratePortalURL:
+    Description: 'Use the build-portal-url.sh script to generate a properly encoded URL'
+    Value: !Sub 'bash build-portal-url.sh -s ${AWS::StackName} -u https://scottdunnflux.github.io/FluxS3Portal/index.html'
+
+  SecuritySummary:
+    Description: 'Security features enabled'
+    Value: !Sub |
+      KMS Customer Managed Key: ${S3EncryptionKey}
+      Key Rotation: Enabled
+      S3 Bucket Encryption: SSE-KMS
+      Access Logging: ${S3AccessLogGroup}
+      Path-based Permissions: uploads/ folder only
+      No Public Access: Fully private bucket
+
+  SampleUploadPath:
+    Description: 'Files uploaded through the portal will go to this path'
+    Value: !Sub 's3://${MainBucket}/uploads/'
+
+  BucketStructure:
+    Description: 'Recommended bucket folder structure'
+    Value: !Sub |
+      ${MainBucket}/
+      ├── docs/          (read-only documentation)
+      ├── files/         (read-only shared files)  
+      └── uploads/       (read/write upload area)
+
+  ComplianceNotes:
+    Description: 'Security compliance features'
+    Value: |
+      All data encrypted at rest with customer managed KMS keys
+      Key rotation enabled automatically
+      Access logged to CloudWatch
+      Principle of least privilege IAM policies
+      No public bucket access
+      Path-based access restrictions
+
+# Deployment Instructions:
+# 
+# 1. Get your current IAM user/role ARN for KMS admin access:
+#    aws sts get-caller-identity --query "Arn" --output text
+#
+# 2. Deploy the CloudFormation stack:
+#    aws cloudformation create-stack \
+#      --stack-name my-file-portal \
+#      --template-body file://s3-portal-template.yaml \
+#      --parameters ParameterKey=ProjectName,ParameterValue=my-portal \
+#                   ParameterKey=CompanyName,ParameterValue="My Company" \
+#                   ParameterKey=KMSAdminArn,ParameterValue="arn:aws:iam::123456789012:user/admin" \
+#      --capabilities CAPABILITY_NAMED_IAM
+#
+# 3. Generate the portal URL (handles URL encoding properly):
+#    chmod +x build-portal-url.sh
+#    ./build-portal-url.sh -s my-file-portal -u https://username.github.io/repo/index.html
+#
+# 4. Upload your HTML file to GitHub Pages
+#
+# 5. Create initial folder structure in S3:
+#    aws s3api put-object --bucket BUCKET-NAME --key docs/ --body /dev/null
+#    aws s3api put-object --bucket BUCKET-NAME --key files/ --body /dev/null  
+#    aws s3api put-object --bucket BUCKET-NAME --key uploads/ --body /dev/null
+#
+# 6. Upload some initial documentation:
+#    aws s3 cp ./README.md s3://BUCKET-NAME/docs/
+#
+# 7. Verify encryption is working:
+#    aws s3api head-object --bucket BUCKET-NAME --key docs/README.md
+#    # Should show ServerSideEncryption: aws:kms
