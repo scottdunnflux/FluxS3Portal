@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flux S3 Portal</title>
+    <!-- AWS SDK -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1691.0/aws-sdk.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -469,6 +471,13 @@
             showStatus('Connecting to S3...', 'loading');
 
             try {
+                // Configure AWS SDK
+                AWS.config.update({
+                    accessKeyId: accessKey,
+                    secretAccessKey: secretKey,
+                    region: region
+                });
+
                 // Store configuration
                 s3Config = {
                     bucket,
@@ -477,6 +486,9 @@
                     region
                 };
                 currentBucket = bucket;
+
+                // Create S3 service object
+                s3Client = new AWS.S3();
 
                 // Test connection and load root folders
                 await listFiles('');
@@ -503,74 +515,75 @@
         }
 
         async function checkFileExists(key) {
+            if (!s3Client) return false;
+            
             try {
-                const response = await fetch(generateS3URL(key), { method: 'HEAD' });
-                return response.ok;
+                await s3Client.headObject({
+                    Bucket: s3Config.bucket,
+                    Key: key
+                }).promise();
+                return true;
             } catch (error) {
                 return false;
             }
         }
 
-        // Generate signed S3 URL with AWS Signature V4
+        // Generate signed S3 URL using AWS SDK
         async function generateS3URL(key, method = 'GET', expires = 3600) {
-            const { bucket, accessKey, secretKey, region } = s3Config;
+            if (!s3Client) {
+                throw new Error('S3 client not initialized');
+            }
             
-            // Create the request
-            const host = `${bucket}.s3.${region}.amazonaws.com`;
-            const url = `https://${host}/${encodeURIComponent(key).replace(/%2F/g, '/')}`;
-            
-            // For GET requests, we can use query string authentication
-            const timestamp = Math.floor(Date.now() / 1000);
-            const expiration = timestamp + expires;
-            
-            // Simple approach: return unsigned URL for public buckets or buckets with CORS
-            // In production, implement full AWS Signature V4
-            return url;
+            return s3Client.getSignedUrl(method === 'GET' ? 'getObject' : method, {
+                Bucket: s3Config.bucket,
+                Key: key,
+                Expires: expires
+            });
         }
 
-        // List S3 objects with proper API call
+        // List S3 objects using AWS SDK
         async function listFiles(prefix = '') {
             showStatus('Loading files...', 'loading');
             currentPrefix = prefix;
             
+            if (!s3Client) {
+                showStatus('S3 client not initialized', 'error');
+                return;
+            }
+            
             try {
-                const { bucket, region } = s3Config;
-                const listUrl = `https://${bucket}.s3.${region}.amazonaws.com/?list-type=2&delimiter=/&prefix=${encodeURIComponent(prefix)}`;
+                const params = {
+                    Bucket: s3Config.bucket,
+                    Prefix: prefix,
+                    Delimiter: '/'
+                };
                 
-                const response = await fetch(listUrl);
-                if (!response.ok) {
-                    throw new Error(`Failed to list objects: ${response.status}`);
-                }
-                
-                const xmlText = await response.text();
-                const parser = new DOMParser();
-                const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+                const data = await s3Client.listObjectsV2(params).promise();
                 
                 // Parse folders (CommonPrefixes)
-                const folders = Array.from(xmlDoc.querySelectorAll('CommonPrefixes Prefix')).map(prefix => ({
-                    key: prefix.textContent,
+                const folders = (data.CommonPrefixes || []).map(cp => ({
+                    key: cp.Prefix,
                     type: 'folder',
-                    name: prefix.textContent.replace(currentPrefix, '').replace('/', '')
+                    name: cp.Prefix.replace(prefix, '').replace('/', '')
                 }));
                 
                 // Parse files (Contents)
-                const files = Array.from(xmlDoc.querySelectorAll('Contents')).map(content => {
-                    const key = content.querySelector('Key').textContent;
-                    const size = parseInt(content.querySelector('Size').textContent);
-                    const lastModified = content.querySelector('LastModified').textContent;
-                    
+                const files = (data.Contents || []).map(content => {
                     // Skip folder markers (0-byte objects ending with /)
-                    if (key.endsWith('/') && size === 0) return null;
+                    if (content.Key.endsWith('/') && content.Size === 0) return null;
                     
-                    const name = key.replace(currentPrefix, '');
+                    const name = content.Key.replace(prefix, '');
+                    // Skip if it's just the prefix itself
+                    if (!name) return null;
+                    
                     const isHtml = name.toLowerCase().endsWith('.html');
                     
                     return {
-                        key,
+                        key: content.Key,
                         type: 'file',
                         name,
-                        size,
-                        lastModified,
+                        size: content.Size,
+                        lastModified: content.LastModified,
                         isHtml
                     };
                 }).filter(Boolean);
@@ -581,19 +594,7 @@
                 
             } catch (error) {
                 console.error('S3 listing error:', error);
-                
-                // Fallback: show the three expected root folders if we're at root
-                if (!prefix) {
-                    const rootFolders = [
-                        { key: 'docs/', type: 'folder', name: 'docs' },
-                        { key: 'files/', type: 'folder', name: 'files' },
-                        { key: 'uploads/', type: 'folder', name: 'uploads' }
-                    ];
-                    displayFiles(rootFolders, prefix);
-                    showStatus('Showing expected folder structure (connection may have limited permissions)', 'success');
-                } else {
-                    showStatus(`Failed to load files: ${error.message}`, 'error');
-                }
+                showStatus(`Failed to load files: ${error.message}`, 'error');
             }
         }
 
@@ -731,13 +732,17 @@
         }
 
         async function fetchFileContent(s3Key) {
+            if (!s3Client) {
+                throw new Error('S3 client not initialized');
+            }
+            
             try {
-                const url = await generateS3URL(s3Key);
-                const response = await fetch(url);
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                return await response.text();
+                const data = await s3Client.getObject({
+                    Bucket: s3Config.bucket,
+                    Key: s3Key
+                }).promise();
+                
+                return data.Body.toString('utf-8');
             } catch (error) {
                 throw new Error(`Failed to fetch ${s3Key}: ${error.message}`);
             }
@@ -815,8 +820,13 @@
         }
 
         async function downloadFile(s3Key, filename) {
+            if (!s3Client) {
+                showStatus('S3 client not initialized', 'error');
+                return;
+            }
+            
             try {
-                const url = await generateSignedURL(s3Key);
+                const url = await generateS3URL(s3Key);
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = filename;
