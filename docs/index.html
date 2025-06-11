@@ -592,7 +592,7 @@
         </div>
 
         <div class="header">
-            <h1 class="title">Flux S3 Portal 34</h1>
+            <h1 class="title">Flux S3 Portal 37</h1>
             <p class="subtitle">Secure S3 bucket browser with documentation rendering</p>
         </div>
 
@@ -1181,13 +1181,14 @@
             try {
                 showStatus(`Generating download link for ${filename}...`, 'loading');
                 
-                // Use AWS SDK to generate proper signed URL with v4 signature
-                const url = s3Client.getSignedUrl('getObject', {
+                // Use AWS SDK to generate proper signed URL with explicit v4 signature
+                const params = {
                     Bucket: s3Config.bucket,
                     Key: s3Key,
-                    Expires: 300, // 5 minutes
-                    ResponseContentDisposition: `attachment; filename="${filename}"`
-                });
+                    Expires: 300 // 5 minutes
+                };
+                
+                const url = s3Client.getSignedUrl('getObject', params);
                 
                 // Create download link
                 const link = document.createElement('a');
