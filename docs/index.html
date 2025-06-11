@@ -697,7 +697,9 @@
         let isUploadMode = false;
 
         // Initialize from URL parameters
+        // Initialize from URL parameters  
         function initializeFromURL() {
+            console.log('🔍 Initializing from URL...');
             const urlParams = new URLSearchParams(window.location.search);
             const bucket = urlParams.get('bucket');
             const key = urlParams.get('key');
@@ -705,22 +707,77 @@
             const region = urlParams.get('region');
             const path = urlParams.get('path');
 
+            console.log('📋 URL Parameters found:', { bucket, key: key ? key.substring(0,8) + '...' : null, secret: secret ? '***' : null, region, path });
+
             if (bucket && key && secret && region) {
-                document.getElementById('bucket').value = bucket;
-                document.getElementById('accessKey').value = key;
-                document.getElementById('secretKey').value = secret;
-                document.getElementById('region').value = region;
+                console.log('✅ All required parameters found, attempting auto-connection...');
                 
+                // Wait for page to fully load before populating
                 setTimeout(() => {
-                    connectToS3().then(() => {
-                        if (path) {
-                            loadDocumentationPage(path);
-                        } else {
-                            // Auto-load docs/index.html if it exists
-                            checkForDocsIndex();
-                        }
+                    console.log('🔧 Looking for form fields...');
+                    // Use the correct modal input IDs
+                    const bucketInput = document.getElementById('bucketInput');
+                    const accessKeyInput = document.getElementById('accessKeyInput');
+                    const secretKeyInput = document.getElementById('secretKeyInput');
+                    const regionInput = document.getElementById('regionInput');
+                    
+                    console.log('📝 Form elements found:', {
+                        bucketInput: !!bucketInput,
+                        accessKeyInput: !!accessKeyInput,
+                        secretKeyInput: !!secretKeyInput,
+                        regionInput: !!regionInput
                     });
-                }, 500);
+                    
+                    console.log('🔧 Populating form fields...');
+                    if (bucketInput) {
+                        bucketInput.value = bucket;
+                        console.log('  ✓ Bucket field populated with:', bucket);
+                    } else {
+                        console.error('  ❌ bucketInput element not found');
+                    }
+                    if (accessKeyInput) {
+                        accessKeyInput.value = key;
+                        console.log('  ✓ Access key field populated');
+                    } else {
+                        console.error('  ❌ accessKeyInput element not found');
+                    }
+                    if (secretKeyInput) {
+                        secretKeyInput.value = secret;
+                        console.log('  ✓ Secret key field populated');
+                    } else {
+                        console.error('  ❌ secretKeyInput element not found');
+                    }
+                    if (regionInput) {
+                        regionInput.value = region;
+                        console.log('  ✓ Region field populated with:', region);
+                    } else {
+                        console.error('  ❌ regionInput element not found');
+                    }
+                    
+                    // Check if AWS SDK is loaded and connect
+                    if (typeof AWS !== 'undefined') {
+                        console.log('🚀 AWS SDK loaded, attempting connection...');
+                        connectToS3().then(() => {
+                            console.log('✅ Auto-connection successful!');
+                            if (path) {
+                                console.log('📄 Loading documentation path:', path);
+                                loadDocumentationPage(path);
+                            } else {
+                                console.log('📁 Checking for docs/index.html...');
+                                checkForDocsIndex();
+                            }
+                        }).catch(error => {
+                            console.error('❌ Auto-connection failed:', error);
+                        });
+                    } else {
+                        console.error('❌ AWS SDK not loaded');
+                        showStatus('AWS SDK not loaded. Please configure manually.', 'error');
+                    }
+                }, 1000);
+            } else {
+                console.log('ℹ️ Missing required URL parameters for auto-connection');
+                console.log('   Expected: bucket, key, secret, region');
+                console.log('   Received:', { bucket: !!bucket, key: !!key, secret: !!secret, region: !!region });
             }
 
             // Setup upload functionality
@@ -1515,3 +1572,4 @@
     </script>
 </body>
 </html>
+            
