@@ -1190,25 +1190,33 @@
             try {
                 showStatus(`Generating download link for ${filename}...`, 'loading');
                 
-                // Use AWS SDK to generate proper signed URL with explicit v4 signature
-                const params = {
+                // Use getObject with streaming to create a blob URL instead of signed URL
+                // This bypasses the signature version issues
+                const data = await s3Client.getObject({
                     Bucket: s3Config.bucket,
-                    Key: s3Key,
-                    Expires: 300 // 5 minutes
-                };
+                    Key: s3Key
+                }).promise();
                 
-                const url = s3Client.getSignedUrl('getObject', params);
+                // Create blob from the data
+                const blob = new Blob([data.Body], { 
+                    type: data.ContentType || 'application/octet-stream' 
+                });
+                
+                // Create blob URL
+                const blobUrl = URL.createObjectURL(blob);
                 
                 // Create download link
                 const link = document.createElement('a');
-                link.href = url;
+                link.href = blobUrl;
                 link.download = filename;
-                link.target = '_blank';
                 link.style.display = 'none';
                 
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+                
+                // Clean up blob URL
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
                 
                 showStatus(`Download started for ${filename}`, 'success');
             } catch (error) {
