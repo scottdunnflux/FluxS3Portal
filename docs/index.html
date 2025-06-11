@@ -9,6 +9,8 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <!-- AWS SDK v2 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1691.0/aws-sdk.min.js"></script>
+    <!-- CryptoJS for AWS v4 signature generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -1190,39 +1192,161 @@
             try {
                 showStatus(`Generating download link for ${filename}...`, 'loading');
                 
-                // Use getObject with streaming to create a blob URL instead of signed URL
-                // This bypasses the signature version issues
-                const data = await s3Client.getObject({
-                    Bucket: s3Config.bucket,
-                    Key: s3Key
-                }).promise();
-                
-                // Create blob from the data
-                const blob = new Blob([data.Body], { 
-                    type: data.ContentType || 'application/octet-stream' 
+                // Generate proper v4 presigned URL
+                const url = generatePresignedUrl({
+                    accessKeyId: s3Config.accessKey,
+                    secretAccessKey: s3Config.secretKey,
+                    region: s3Config.region,
+                    bucket: s3Config.bucket,
+                    key: s3Key,
+                    expires: 300, // 5 minutes
+                    responseContentDisposition: `attachment; filename="${filename}"`
                 });
-                
-                // Create blob URL
-                const blobUrl = URL.createObjectURL(blob);
                 
                 // Create download link
                 const link = document.createElement('a');
-                link.href = blobUrl;
+                link.href = url;
                 link.download = filename;
+                link.target = '_blank';
                 link.style.display = 'none';
                 
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
                 
-                // Clean up blob URL
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-                
                 showStatus(`Download started for ${filename}`, 'success');
             } catch (error) {
                 showStatus(`Download failed: ${error.message}`, 'error');
                 console.error('Download error:', error);
             }
+        }
+
+        // AWS Signature Version 4 implementation for presigned URLs
+        function generatePresignedUrl(options) {
+            const {
+                accessKeyId,
+                secretAccessKey,
+                region,
+                bucket,
+                key,
+                expires = 3600,
+                responseContentDisposition,
+                responseContentType,
+                versionId
+            } = options;
+
+            // Validate required parameters
+            if (!accessKeyId || !secretAccessKey || !region || !bucket || !key) {
+                throw new Error('Missing required parameters for presigned URL generation');
+            }
+
+            // Create timestamp
+            const now = new Date();
+            const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '');
+            const dateStamp = amzDate.substr(0, 8);
+
+            // Create credential scope
+            const credentialScope = `${dateStamp}/${region}/s3/aws4_request`;
+            const credential = `${accessKeyId}/${credentialScope}`;
+
+            // Build query parameters
+            const queryParams = {
+                'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+                'X-Amz-Credential': credential,
+                'X-Amz-Date': amzDate,
+                'X-Amz-Expires': expires.toString(),
+                'X-Amz-SignedHeaders': 'host'
+            };
+
+            // Add optional response parameters
+            if (responseContentDisposition) {
+                queryParams['response-content-disposition'] = responseContentDisposition;
+            }
+            if (responseContentType) {
+                queryParams['response-content-type'] = responseContentType;
+            }
+            if (versionId) {
+                queryParams['versionId'] = versionId;
+            }
+
+            // Create canonical query string
+            const sortedKeys = Object.keys(queryParams).sort();
+            const canonicalQueryString = sortedKeys
+                .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(queryParams[k])}`)
+                .join('&');
+
+            // Create canonical request
+            const canonicalUri = '/' + key.split('/').map(encodeURIComponent).join('/');
+            const canonicalHeaders = `host:${bucket}.s3.amazonaws.com\n`;
+            const signedHeaders = 'host';
+            const payloadHash = 'UNSIGNED-PAYLOAD';
+
+            const canonicalRequest = [
+                'GET',
+                canonicalUri,
+                canonicalQueryString,
+                canonicalHeaders,
+                signedHeaders,
+                payloadHash
+            ].join('\n');
+
+            // Create string to sign
+            const algorithm = 'AWS4-HMAC-SHA256';
+            const stringToSign = [
+                algorithm,
+                amzDate,
+                credentialScope,
+                sha256(canonicalRequest)
+            ].join('\n');
+
+            // Calculate signature
+            const signature = calculateSignature(secretAccessKey, dateStamp, region, stringToSign);
+
+            // Add signature to query parameters
+            queryParams['X-Amz-Signature'] = signature;
+
+            // Build final URL
+            const finalQueryString = Object.keys(queryParams)
+                .sort()
+                .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(queryParams[k])}`)
+                .join('&');
+
+            return `https://${bucket}.s3.amazonaws.com${canonicalUri}?${finalQueryString}`;
+        }
+
+        // Helper function to calculate AWS v4 signature
+        function calculateSignature(secretAccessKey, dateStamp, region, stringToSign) {
+            const kDate = hmacSha256('AWS4' + secretAccessKey, dateStamp);
+            const kRegion = hmacSha256(kDate, region);
+            const kService = hmacSha256(kRegion, 's3');
+            const kSigning = hmacSha256(kService, 'aws4_request');
+            return hmacSha256(kSigning, stringToSign, 'hex');
+        }
+
+        // Helper function for HMAC-SHA256
+        function hmacSha256(key, message, encoding = 'binary') {
+            const crypto = window.crypto || window.msCrypto;
+            if (!crypto || !crypto.subtle) {
+                throw new Error('Web Crypto API not available');
+            }
+
+            // For browser compatibility, we'll use a simpler approach
+            // This is a synchronous implementation using CryptoJS if available
+            if (typeof CryptoJS !== 'undefined') {
+                const hash = CryptoJS.HmacSHA256(message, key);
+                return encoding === 'hex' ? hash.toString() : hash;
+            }
+
+            // Fallback: basic implementation (not cryptographically secure for production)
+            throw new Error('HMAC-SHA256 implementation not available. Please include CryptoJS library.');
+        }
+
+        // Helper function for SHA256
+        function sha256(message) {
+            if (typeof CryptoJS !== 'undefined') {
+                return CryptoJS.SHA256(message).toString();
+            }
+            throw new Error('SHA256 implementation not available. Please include CryptoJS library.');
         }
 
         function shareFile(s3Key, filename) {
