@@ -429,6 +429,9 @@
                 <button class="btn-secondary" onclick="refreshFiles()">
                     <span>🔄</span> Refresh
                 </button>
+                <button class="btn-secondary" onclick="toggleUpload()" id="uploadToggleMain">
+                    <span>⬆️</span> Upload Files
+                </button>
                 <button class="btn-secondary" onclick="generateShareLink()">
                     <span>🔗</span> Share Portal
                 </button>
@@ -441,9 +444,6 @@
                 <div class="view-controls">
                     <button class="btn-secondary btn-small" onclick="toggleView()" id="viewToggle">
                         <span>📄</span> File View
-                    </button>
-                    <button class="btn-secondary btn-small" onclick="toggleUpload()" id="uploadToggle">
-                        <span>⬆️</span> Upload
                     </button>
                     <button class="btn-secondary btn-small hidden" onclick="shareCurrentPage()" id="sharePageBtn">
                         <span>🔗</span> Share Page
@@ -894,14 +894,16 @@
             return resolvedPath;
         }
 
-        function switchToDocumentationView() {
+        function switchToUploadView() {
             document.getElementById('fileBrowser').style.display = 'none';
-            document.getElementById('uploadArea').style.display = 'none';
-            document.getElementById('documentationViewer').classList.add('active');
+            document.getElementById('documentationViewer').classList.remove('active');
+            document.getElementById('uploadArea').style.display = 'block';
             document.getElementById('viewToggle').innerHTML = '<span>📁</span> File View';
-            document.getElementById('uploadToggle').innerHTML = '<span>⬆️</span> Upload';
-            isDocumentationMode = true;
-            isUploadMode = false;
+            document.getElementById('uploadToggleMain').innerHTML = '<span>📄</span> Exit Upload';
+            document.getElementById('breadcrumb').textContent = 'Upload Files → uploads/ folder';
+            document.getElementById('sharePageBtn').classList.add('hidden');
+            isDocumentationMode = false;
+            isUploadMode = true;
         }
 
         function switchToFileView() {
@@ -909,23 +911,21 @@
             document.getElementById('uploadArea').style.display = 'none';
             document.getElementById('documentationViewer').classList.remove('active');
             document.getElementById('viewToggle').innerHTML = '<span>📄</span> Doc View';
-            document.getElementById('uploadToggle').innerHTML = '<span>⬆️</span> Upload';
+            document.getElementById('uploadToggleMain').innerHTML = '<span>⬆️</span> Upload Files';
             document.getElementById('breadcrumb').textContent = 'Browse Files';
             document.getElementById('sharePageBtn').classList.add('hidden');
             isDocumentationMode = false;
             isUploadMode = false;
         }
 
-        function switchToUploadView() {
+        function switchToDocumentationView() {
             document.getElementById('fileBrowser').style.display = 'none';
-            document.getElementById('documentationViewer').classList.remove('active');
-            document.getElementById('uploadArea').style.display = 'block';
+            document.getElementById('uploadArea').style.display = 'none';
+            document.getElementById('documentationViewer').classList.add('active');
             document.getElementById('viewToggle').innerHTML = '<span>📁</span> File View';
-            document.getElementById('uploadToggle').innerHTML = '<span>📄</span> Upload Mode';
-            document.getElementById('breadcrumb').textContent = 'Upload Files';
-            document.getElementById('sharePageBtn').classList.add('hidden');
-            isDocumentationMode = false;
-            isUploadMode = true;
+            document.getElementById('uploadToggleMain').innerHTML = '<span>⬆️</span> Upload Files';
+            isDocumentationMode = true;
+            isUploadMode = false;
         }
 
         function toggleView() {
