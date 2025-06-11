@@ -1179,17 +1179,31 @@
             }
             
             try {
-                const url = await generateS3URL(s3Key);
+                showStatus(`Generating download link for ${filename}...`, 'loading');
+                
+                // Use AWS SDK to generate proper signed URL with v4 signature
+                const url = s3Client.getSignedUrl('getObject', {
+                    Bucket: s3Config.bucket,
+                    Key: s3Key,
+                    Expires: 300, // 5 minutes
+                    ResponseContentDisposition: `attachment; filename="${filename}"`
+                });
+                
+                // Create download link
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = filename;
                 link.target = '_blank';
+                link.style.display = 'none';
+                
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                showStatus(`Downloading ${filename}...`, 'success');
+                
+                showStatus(`Download started for ${filename}`, 'success');
             } catch (error) {
                 showStatus(`Download failed: ${error.message}`, 'error');
+                console.error('Download error:', error);
             }
         }
 
