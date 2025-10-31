@@ -813,69 +813,160 @@
         // Folder size cache
         let folderSizeCache = new Map();
 
+        // Static encryption key for AES (in production, consider more sophisticated key management)
+        const ENCRYPTION_KEY = 'FluxS3Portal-AES-Key-2024-v1';
+        const COOKIE_NAME = 'flux_s3_creds';
+        const TOKEN_EXPIRY_DAYS = 30;
+
+        // Cookie Management Functions
+        function setCookie(name, value, days) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+            document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/;SameSite=Strict`;
+        }
+
+        function getCookie(name) {
+            const nameEQ = name + '=';
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                cookie = cookie.trim();
+                if (cookie.indexOf(nameEQ) === 0) {
+                    return cookie.substring(nameEQ.length);
+                }
+            }
+            return null;
+        }
+
+        function deleteCookie(name) {
+            document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/;`;
+        }
+
+        // Token Encryption/Decryption Functions
+        function encryptCredentials(bucket, key, secret, region) {
+            const expiryTime = Date.now() + (TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+            const payload = JSON.stringify({
+                bucket,
+                key,
+                secret,
+                region,
+                expiry: expiryTime
+            });
+
+            const encrypted = CryptoJS.AES.encrypt(payload, ENCRYPTION_KEY).toString();
+            // Make URL-safe
+            return encodeURIComponent(encrypted);
+        }
+
+        function decryptCredentials(token) {
+            try {
+                const decoded = decodeURIComponent(token);
+                const decrypted = CryptoJS.AES.decrypt(decoded, ENCRYPTION_KEY);
+                const payload = JSON.parse(decrypted.toString(CryptoJS.enc.Utf8));
+
+                // Check expiration
+                if (payload.expiry && Date.now() > payload.expiry) {
+                    console.warn('Token has expired');
+                    return null;
+                }
+
+                return payload;
+            } catch (error) {
+                console.error('Failed to decrypt token:', error);
+                return null;
+            }
+        }
+
+        function saveCredentialsToCookie(bucket, key, secret, region) {
+            const token = encryptCredentials(bucket, key, secret, region);
+            setCookie(COOKIE_NAME, token, TOKEN_EXPIRY_DAYS);
+        }
+
+        function loadCredentialsFromCookie() {
+            const token = getCookie(COOKIE_NAME);
+            if (!token) return null;
+
+            return decryptCredentials(token);
+        }
+
+        function clearStoredCredentials() {
+            deleteCookie(COOKIE_NAME);
+        }
+
         // Initialize from URL parameters
-        // Initialize from URL parameters  
+        // Initialize from URL parameters
         function initializeFromURL() {
             console.log('🔍 Initializing from URL...');
+
+            let credentials = null;
+            let credentialSource = 'none';
             const urlParams = new URLSearchParams(window.location.search);
-            const bucket = urlParams.get('bucket');
-            const key = urlParams.get('key');
-            const secret = urlParams.get('secret');
-            const region = urlParams.get('region');
             const path = urlParams.get('path');
 
-            console.log('📋 URL Parameters found:', { bucket, key: key ? key.substring(0,8) + '...' : null, secret: secret ? '***' : null, region, path });
+            // Priority 1: Check for stored cookies
+            credentials = loadCredentialsFromCookie();
+            if (credentials) {
+                console.log('✅ Loaded credentials from cookie');
+                credentialSource = 'cookie';
+            }
 
-            if (bucket && key && secret && region) {
-                console.log('✅ All required parameters found, attempting auto-connection...');
-                
-                // Wait for page to fully load before populating
+            // Priority 2: Check for encrypted token in URL (new format)
+            if (!credentials) {
+                const token = urlParams.get('token');
+                if (token) {
+                    console.log('🔐 Found encrypted token in URL');
+                    credentials = decryptCredentials(token);
+                    if (credentials) {
+                        console.log('✅ Successfully decrypted token');
+                        credentialSource = 'token';
+                    } else {
+                        console.warn('⚠️ Token found but decryption failed or expired');
+                    }
+                }
+            }
+
+            // Priority 3: Check for legacy plain-text parameters (backward compatibility)
+            if (!credentials) {
+                const bucket = urlParams.get('bucket');
+                const key = urlParams.get('key');
+                const secret = urlParams.get('secret');
+                const region = urlParams.get('region');
+
+                if (bucket && key && secret && region) {
+                    console.log('📋 Found legacy URL parameters');
+                    credentials = { bucket, key, secret, region };
+                    credentialSource = 'legacy';
+                }
+            }
+
+            console.log('📊 Credential source:', credentialSource);
+
+            if (credentials) {
+                console.log('✅ Credentials available, attempting auto-connection...');
+
+                // Wait for page to fully load before connecting
                 setTimeout(() => {
-                    console.log('🔧 Looking for form fields...');
-                    // Use the correct modal input IDs
+                    console.log('🔧 Populating form fields...');
                     const bucketInput = document.getElementById('bucketInput');
                     const accessKeyInput = document.getElementById('accessKeyInput');
                     const secretKeyInput = document.getElementById('secretKeyInput');
                     const regionInput = document.getElementById('regionInput');
-                    
-                    console.log('📝 Form elements found:', {
-                        bucketInput: !!bucketInput,
-                        accessKeyInput: !!accessKeyInput,
-                        secretKeyInput: !!secretKeyInput,
-                        regionInput: !!regionInput
-                    });
-                    
-                    console.log('🔧 Populating form fields...');
-                    if (bucketInput) {
-                        bucketInput.value = bucket;
-                        console.log('  ✓ Bucket field populated with:', bucket);
-                    } else {
-                        console.error('  ❌ bucketInput element not found');
-                    }
-                    if (accessKeyInput) {
-                        accessKeyInput.value = key;
-                        console.log('  ✓ Access key field populated');
-                    } else {
-                        console.error('  ❌ accessKeyInput element not found');
-                    }
-                    if (secretKeyInput) {
-                        secretKeyInput.value = secret;
-                        console.log('  ✓ Secret key field populated');
-                    } else {
-                        console.error('  ❌ secretKeyInput element not found');
-                    }
-                    if (regionInput) {
-                        regionInput.value = region;
-                        console.log('  ✓ Region field populated with:', region);
-                    } else {
-                        console.error('  ❌ regionInput element not found');
-                    }
-                    
+
+                    if (bucketInput) bucketInput.value = credentials.bucket;
+                    if (accessKeyInput) accessKeyInput.value = credentials.key;
+                    if (secretKeyInput) secretKeyInput.value = credentials.secret;
+                    if (regionInput) regionInput.value = credentials.region;
+
                     // Check if AWS SDK is loaded and connect
                     if (typeof AWS !== 'undefined') {
                         console.log('🚀 AWS SDK loaded, attempting connection...');
-                        connectToS3().then(() => {
+                        connectToS3(credentialSource).then(() => {
                             console.log('✅ Auto-connection successful!');
+
+                            // Clean URL if credentials came from URL (not cookies)
+                            if (credentialSource === 'token' || credentialSource === 'legacy') {
+                                cleanURLParameters(path);
+                            }
+
                             if (path) {
                                 console.log('📄 Loading documentation path:', path);
                                 loadDocumentationPage(path);
@@ -892,13 +983,24 @@
                     }
                 }, 1000);
             } else {
-                console.log('ℹ️ Missing required URL parameters for auto-connection');
-                console.log('   Expected: bucket, key, secret, region');
-                console.log('   Received:', { bucket: !!bucket, key: !!key, secret: !!secret, region: !!region });
+                console.log('ℹ️ No credentials found in cookies or URL');
             }
 
             // Setup upload functionality
             setupUploadHandlers();
+        }
+
+        function cleanURLParameters(preservePath) {
+            // Remove credentials from URL but preserve path if provided
+            const newURL = new URL(window.location.href);
+            newURL.search = '';
+
+            if (preservePath) {
+                newURL.searchParams.set('path', preservePath);
+            }
+
+            window.history.replaceState({}, document.title, newURL.toString());
+            console.log('🧹 Cleaned URL parameters from address bar');
         }
 
         function setupUploadHandlers() {
@@ -933,7 +1035,7 @@
         }
 
         // AWS S3 SDK setup
-        async function connectToS3() {
+        async function connectToS3(credentialSource = 'manual') {
             const bucket = document.getElementById('bucketInput').value;
             const accessKey = document.getElementById('accessKeyInput').value;
             const secretKey = document.getElementById('secretKeyInput').value;
@@ -972,7 +1074,14 @@
                 // Test connection and load root folders
                 await listFiles('');
                 showStatus('Connected successfully!', 'success');
-                
+
+                // Save credentials to encrypted cookie for future visits
+                // Only save if from manual entry, token, or legacy (not if already from cookie)
+                if (credentialSource !== 'cookie') {
+                    saveCredentialsToCookie(bucket, accessKey, secretKey, region);
+                    console.log('💾 Saved credentials to encrypted cookie');
+                }
+
                 // Close modal if open
                 const modal = document.getElementById('configModal');
                 const modalInstance = bootstrap?.Modal?.getInstance(modal);
@@ -986,10 +1095,10 @@
                     const backdrop = document.querySelector('.modal-backdrop');
                     if (backdrop) backdrop.remove();
                 }
-                
+
                 // Check for docs/index.html
                 setTimeout(checkForDocsIndex, 1000);
-                
+
             } catch (error) {
                 showStatus(`Connection failed: ${error.message}`, 'error');
                 updateConnectionStatus(false);
@@ -1716,13 +1825,22 @@
         function generateShareURL(options = {}) {
             const baseURL = window.location.origin + window.location.pathname;
             const params = new URLSearchParams();
-            
-            if (s3Config.bucket) params.set('bucket', s3Config.bucket);
-            if (s3Config.accessKey) params.set('key', s3Config.accessKey);
-            if (s3Config.secretKey) params.set('secret', s3Config.secretKey);
-            if (s3Config.region) params.set('region', s3Config.region);
-            if (options.path) params.set('path', options.path);
-            
+
+            // Generate encrypted token instead of plain parameters
+            if (s3Config.bucket && s3Config.accessKey && s3Config.secretKey && s3Config.region) {
+                const token = encryptCredentials(
+                    s3Config.bucket,
+                    s3Config.accessKey,
+                    s3Config.secretKey,
+                    s3Config.region
+                );
+                params.set('token', token);
+            }
+
+            if (options.path) {
+                params.set('path', options.path);
+            }
+
             return `${baseURL}?${params.toString()}`;
         }
 

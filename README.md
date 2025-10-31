@@ -57,6 +57,10 @@ Flux S3 Portal provides a secure, user-friendly interface for browsing, viewing,
 - One-click copy to clipboard
 
 #### 🔒 Security Features
+- **Encrypted credential tokens**: Share URLs use AES-encrypted tokens instead of plaintext credentials
+- **Cookie-based credential storage**: Credentials saved as encrypted cookies (30-day expiration) after initial connection
+- **Automatic URL cleanup**: Credentials removed from browser address bar after page load
+- **Expiring share links**: All share tokens expire after 30 days
 - Credentials stored client-side only (not on any server)
 - Read-only access pattern with controlled upload location
 - **No delete functionality** - prevents accidental/malicious deletion
@@ -104,6 +108,19 @@ The multi-item download feature (files and folders) with size-based batching, au
 ## Low Priority Objectives
 
 ### 📊 Future Enhancements
+
+#### JWT-Style Signed Tokens
+- **Status**: Not implemented
+- **Priority**: Low
+- **Description**: Replace AES encryption with JWT-style cryptographically signed tokens
+- **Current Behavior**: Uses AES encryption with a static key embedded in the code
+- **Benefits**:
+  - Stronger security through asymmetric cryptography
+  - Token tampering detection via signature verification
+  - Industry-standard token format
+  - Better key management options
+- **Implementation**: Use Web Crypto API or jose library for JWT creation/verification
+- **Reference**: `docs/index.html:845-877` (current encryption implementation)
 
 #### PDF Viewer
 - **Status**: Not implemented
@@ -232,18 +249,36 @@ open docs/index.html
    - AWS Region
 4. Click "Connect"
 
-**Method 2: Share URL with Embedded Credentials**
-Generate a share URL with credentials embedded:
+**Method 2: Share URL with Encrypted Token (Recommended)**
+Use the built-in "Share" button to generate a secure share URL with encrypted credentials:
 ```
-https://your-domain.com/index.html?bucket=BUCKET&key=ACCESS_KEY&secret=SECRET_KEY&region=REGION
+https://your-domain.com/index.html?token=ENCRYPTED_TOKEN
 ```
 
 Or with a specific path:
 ```
-https://your-domain.com/index.html?bucket=BUCKET&key=KEY&secret=SECRET&region=REGION&path=docs/index.html
+https://your-domain.com/index.html?token=ENCRYPTED_TOKEN&path=docs/index.html
 ```
 
-**Security Warning**: Share URLs contain AWS credentials. Only share with trusted users and consider using temporary credentials or IAM roles with limited permissions.
+**How it works**:
+- Credentials are AES-encrypted into a single token parameter
+- Token expires after 30 days
+- After page loads, credentials are stored in encrypted cookies
+- URL parameters are automatically cleaned from the address bar
+- Users can bookmark the clean URL and rely on cookies for subsequent visits
+
+**Legacy Format (Backward Compatible)**:
+```
+https://your-domain.com/index.html?bucket=BUCKET&key=ACCESS_KEY&secret=SECRET_KEY&region=REGION
+```
+This format still works but is less secure as credentials are visible in plaintext in the URL.
+
+**Security Notes**:
+- Encrypted tokens are much more secure than plaintext credentials
+- Tokens expire automatically after 30 days
+- Share URLs only with trusted users
+- Consider using temporary credentials or IAM roles with limited permissions
+- Credentials are never sent to any server except AWS S3
 
 ## Usage
 
@@ -362,7 +397,13 @@ https://your-domain.com/index.html?bucket=BUCKET&key=KEY&secret=SECRET&region=RE
 
 ### Security Model
 
-**Client-Side Credentials**: All AWS credentials are stored only in the browser (never sent to any server except AWS S3).
+**Encrypted Tokens**: Share URLs use AES-encrypted tokens (30-day expiration) instead of plaintext credentials. Tokens are automatically generated when sharing and include all necessary credentials in a single encrypted parameter.
+
+**Cookie-Based Persistence**: After successful connection, credentials are stored as encrypted cookies with 30-day expiration. This allows users to bookmark clean URLs without credentials in the address bar.
+
+**Automatic URL Cleanup**: When loading from a share URL (token or legacy format), credentials are automatically removed from the browser address bar using `history.replaceState()` after the page loads, preventing exposure in browser history.
+
+**Client-Side Credentials**: All AWS credentials are stored only in the browser as encrypted cookies (never sent to any server except AWS S3). The encryption key is embedded in the application code.
 
 **Read-Mostly Access**: Portal designed for reading files with controlled upload capability.
 
@@ -371,6 +412,8 @@ https://your-domain.com/index.html?bucket=BUCKET&key=KEY&secret=SECRET&region=RE
 **Sandboxed Uploads**: All uploads restricted to `uploads/` folder via hard-coded prefix.
 
 **CORS Protection**: Bucket must explicitly allow browser access via CORS configuration.
+
+**Backward Compatibility**: Legacy plaintext URL parameters (`?bucket=...&key=...&secret=...&region=...`) are still supported for existing share links, but new shares use encrypted tokens.
 
 ## Project Structure
 
