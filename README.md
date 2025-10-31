@@ -262,10 +262,18 @@ https://your-domain.com/index.html?token=ENCRYPTED_TOKEN&path=docs/index.html
 
 **How it works**:
 - Credentials are AES-encrypted into a single token parameter
-- Token expires after 30 days
-- After page loads, credentials are stored in encrypted cookies
+- **Share URL tokens expire after 30 days** (embedded expiry timestamp)
+- After page loads, credentials are stored in **encrypted cookies (30-day browser expiry, NO embedded expiry)**
 - URL parameters are automatically cleaned from the address bar
 - Users can bookmark the clean URL and rely on cookies for subsequent visits
+
+**Expiration Model**:
+- **Share URLs**: Have embedded 30-day expiration burned into the token at creation time. After 30 days, the URL becomes invalid even if you never used it.
+- **Cookies**: Have browser cookie expiration (30 days) but NO embedded expiration in the encrypted payload. This means:
+  - If you visit via share URL on Day 5, cookies are saved and valid until Day 35
+  - If you return on Day 32 (after URL expired), your cookies still work
+  - Cookies expire based on last storage time, not URL creation time
+  - This works well for infrequent visitors who may revisit months later
 
 **Legacy Format (Backward Compatible)**:
 ```
@@ -397,9 +405,13 @@ This format still works but is less secure as credentials are visible in plainte
 
 ### Security Model
 
-**Encrypted Tokens**: Share URLs use AES-encrypted tokens (30-day expiration) instead of plaintext credentials. Tokens are automatically generated when sharing and include all necessary credentials in a single encrypted parameter.
+**Encrypted Tokens**: Share URLs use AES-encrypted tokens with embedded 30-day expiration instead of plaintext credentials. Tokens are automatically generated when sharing and include all necessary credentials plus an expiry timestamp in a single encrypted parameter.
 
-**Cookie-Based Persistence**: After successful connection, credentials are stored as encrypted cookies with 30-day expiration. This allows users to bookmark clean URLs without credentials in the address bar.
+**Cookie-Based Persistence**: After successful connection, credentials are stored as encrypted cookies with 30-day browser expiration but NO embedded expiry timestamp. This dual-expiration model means:
+- Share URLs expire 30 days after creation (embedded timestamp)
+- Cookies expire 30 days after last save (browser expiration only)
+- Users who visit via an expired share URL can still access if they have valid cookies from a previous session
+- Ideal for infrequent visitors who may return months later
 
 **Automatic URL Cleanup**: When loading from a share URL (token or legacy format), credentials are automatically removed from the browser address bar using `history.replaceState()` after the page loads, preventing exposure in browser history.
 
