@@ -664,7 +664,7 @@
                         <i class="bi bi-arrow-clockwise"></i> Refresh
                     </button>
                     <button class="btn btn-outline-warning btn-sm hidden" onclick="downloadSelectedFolders()" id="downloadFoldersBtn">
-                        <i class="bi bi-download"></i> Download Selected (<span id="selectedCount">0</span>)
+                        <i class="bi bi-download"></i> Download (<span id="selectedCount">0</span>)
                     </button>
                     <button class="btn btn-outline-info btn-sm" onclick="toggleUpload()" id="uploadToggleMain">
                         <i class="bi bi-cloud-arrow-up"></i> Upload Files
@@ -802,13 +802,16 @@
         let isDocumentationMode = false;
         let isUploadMode = false;
 
-        // Folder download state
-        let selectedFolders = new Set();
+        // Item selection state (files and folders)
+        let selectedItems = new Set();
         let downloadCancelled = false;
 
         // File filtering state
         let currentFileList = [];
         let currentFilePrefix = '';
+
+        // Folder size cache
+        let folderSizeCache = new Map();
 
         // Initialize from URL parameters
         // Initialize from URL parameters  
@@ -1204,13 +1207,13 @@
             element.className = 'file-item';
 
             if (item.type === 'folder') {
-                const isSelected = selectedFolders.has(item.key);
+                const isSelected = selectedItems.has(item.key);
                 if (isSelected) {
                     element.classList.add('selected');
                 }
 
                 element.innerHTML = `
-                    <input type="checkbox" class="folder-checkbox" data-folder-key="${item.key}" ${isSelected ? 'checked' : ''}>
+                    <input type="checkbox" class="folder-checkbox" data-item-key="${item.key}" ${isSelected ? 'checked' : ''}>
                     <span class="file-icon folder-icon">📁</span>
                     <span class="file-name clickable">${item.name} <small class="folder-size" data-folder-key="${item.key}" style="color: #999;">(calculating...)</small></span>
                 `;
@@ -1219,7 +1222,7 @@
                 const checkbox = element.querySelector('.folder-checkbox');
                 checkbox.onclick = (e) => {
                     e.stopPropagation();
-                    toggleFolderSelection(item.key);
+                    toggleItemSelection(item.key);
                 };
 
                 // Handle folder name click to navigate
@@ -1228,18 +1231,25 @@
                     listFiles(item.key);
                 };
 
-                // Calculate folder size asynchronously
-                calculateFolderSize(item.key);
+                // Calculate folder size asynchronously after element is in DOM
+                // Use setTimeout to defer until after appendChild
+                setTimeout(() => calculateFolderSize(item.key), 0);
             } else {
                 const isHtml = item.isHtml;
                 const iconClass = isHtml ? 'html-icon' : 'generic';
                 const icon = isHtml ? '📄' : getFileIcon(item.name);
-                
+
                 // Format file size
                 const sizeText = item.size ? formatFileSize(item.size) : '';
                 const sizeDisplay = sizeText ? `<small>(${sizeText})</small>` : '';
-                
+
+                const isSelected = selectedItems.has(item.key);
+                if (isSelected) {
+                    element.classList.add('selected');
+                }
+
                 element.innerHTML = `
+                    <input type="checkbox" class="folder-checkbox" data-item-key="${item.key}" ${isSelected ? 'checked' : ''}>
                     <span class="file-icon ${iconClass}">${icon}</span>
                     <span class="file-name ${isHtml ? 'clickable' : ''}">${item.name} ${sizeDisplay}</span>
                     <div class="file-actions">
@@ -1251,7 +1261,14 @@
                         </button>
                     </div>
                 `;
-                
+
+                // Handle checkbox click
+                const checkbox = element.querySelector('.folder-checkbox');
+                checkbox.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleItemSelection(item.key);
+                };
+
                 if (isHtml) {
                     element.querySelector('.file-name').onclick = () => loadDocumentationPage(item.key);
                 }
@@ -1723,6 +1740,8 @@
 
         function refreshFiles() {
             if (currentBucket) {
+                // Clear folder size cache on refresh
+                folderSizeCache.clear();
                 listFiles(currentPrefix);
             } else {
                 showStatus('Please connect to S3 first', 'error');
@@ -1756,9 +1775,17 @@
         // Folder size calculation
         async function calculateFolderSize(folderKey) {
             try {
-                const files = await listAllFilesInFolder(folderKey);
-                const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
-                const sizeText = formatFileSize(totalBytes);
+                // Check cache first
+                let sizeText;
+                if (folderSizeCache.has(folderKey)) {
+                    sizeText = folderSizeCache.get(folderKey);
+                } else {
+                    // Calculate and cache
+                    const files = await listAllFilesInFolder(folderKey);
+                    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+                    sizeText = formatFileSize(totalBytes);
+                    folderSizeCache.set(folderKey, sizeText);
+                }
 
                 // Update the display
                 const sizeElements = document.querySelectorAll(`.folder-size[data-folder-key="${folderKey}"]`);
@@ -1776,12 +1803,12 @@
             }
         }
 
-        // Folder selection management
-        function toggleFolderSelection(folderKey) {
-            if (selectedFolders.has(folderKey)) {
-                selectedFolders.delete(folderKey);
+        // Item selection management (files and folders)
+        function toggleItemSelection(itemKey) {
+            if (selectedItems.has(itemKey)) {
+                selectedItems.delete(itemKey);
             } else {
-                selectedFolders.add(folderKey);
+                selectedItems.add(itemKey);
             }
             updateDownloadButton();
             // Refresh display to update visual state
@@ -1789,7 +1816,7 @@
         }
 
         function updateDownloadButton() {
-            const count = selectedFolders.size;
+            const count = selectedItems.size;
             const btn = document.getElementById('downloadFoldersBtn');
             const countSpan = document.getElementById('selectedCount');
 
@@ -1802,10 +1829,10 @@
             }
         }
 
-        // Folder download functionality
+        // Item download functionality (files and folders)
         async function downloadSelectedFolders() {
-            if (selectedFolders.size === 0) {
-                showStatus('No folders selected', 'error');
+            if (selectedItems.size === 0) {
+                showStatus('No items selected', 'error');
                 return;
             }
 
@@ -1817,29 +1844,54 @@
             downloadCancelled = false;
 
             try {
-                // Phase 1: Analyze folders
-                showDownloadProgress('Analyzing folders...', 0, 'Scanning folder structure...');
+                // Phase 1: Analyze items (files and folders)
+                showDownloadProgress('Analyzing items...', 0, 'Scanning selection...');
 
                 const allFiles = [];
                 let totalBytes = 0;
-                let foldersProcessed = 0;
+                let itemsProcessed = 0;
+                let folderCount = 0;
+                let fileCount = 0;
 
-                for (const folderKey of selectedFolders) {
+                for (const itemKey of selectedItems) {
                     if (downloadCancelled) {
                         hideDownloadProgress();
                         return;
                     }
 
-                    foldersProcessed++;
+                    itemsProcessed++;
                     showDownloadProgress(
-                        `Analyzing folders... (${foldersProcessed}/${selectedFolders.size})`,
-                        (foldersProcessed / selectedFolders.size) * 30,
-                        `Scanning: ${folderKey}`
+                        `Analyzing items... (${itemsProcessed}/${selectedItems.size})`,
+                        (itemsProcessed / selectedItems.size) * 30,
+                        `Scanning: ${itemKey}`
                     );
 
-                    const files = await listAllFilesInFolder(folderKey);
-                    allFiles.push(...files);
-                    totalBytes += files.reduce((sum, f) => sum + f.size, 0);
+                    // Check if item is a folder (ends with /) or file
+                    if (itemKey.endsWith('/')) {
+                        // It's a folder - list all files recursively
+                        folderCount++;
+                        const files = await listAllFilesInFolder(itemKey);
+                        allFiles.push(...files);
+                        totalBytes += files.reduce((sum, f) => sum + f.size, 0);
+                    } else {
+                        // It's a file - get its metadata and add directly
+                        fileCount++;
+                        try {
+                            const metadata = await s3Client.headObject({
+                                Bucket: s3Config.bucket,
+                                Key: itemKey
+                            }).promise();
+
+                            allFiles.push({
+                                key: itemKey,
+                                size: metadata.ContentLength,
+                                name: itemKey.split('/').pop() // Just the filename
+                            });
+                            totalBytes += metadata.ContentLength;
+                        } catch (error) {
+                            console.error(`Failed to get metadata for ${itemKey}:`, error);
+                        }
+                    }
                 }
 
                 if (downloadCancelled) {
@@ -1849,10 +1901,14 @@
 
                 // Show confirmation
                 const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+                const itemSummary = [];
+                if (folderCount > 0) itemSummary.push(`${folderCount} folder${folderCount > 1 ? 's' : ''}`);
+                if (fileCount > 0) itemSummary.push(`${fileCount} file${fileCount > 1 ? 's' : ''}`);
+
                 const shouldContinue = confirm(
                     `Ready to download:\n\n` +
-                    `Folders: ${selectedFolders.size}\n` +
-                    `Files: ${allFiles.length}\n` +
+                    `Selection: ${itemSummary.join(' + ')}\n` +
+                    `Total files: ${allFiles.length}\n` +
                     `Total size: ${totalMB} MB\n\n` +
                     `This may take several minutes. Continue?`
                 );
@@ -1864,7 +1920,7 @@
 
                 // Check size limits
                 if (totalBytes > 2 * 1024 * 1024 * 1024) {
-                    alert('Total size exceeds 2GB limit for browser downloads. Please select fewer folders.');
+                    alert('Total size exceeds 2GB limit for browser downloads. Please select fewer items.');
                     hideDownloadProgress();
                     return;
                 }
@@ -2002,9 +2058,22 @@
             }
 
             // Trigger download
-            const folderName = Array.from(selectedFolders)[0].split('/').filter(Boolean)[0] || 'folders';
+            // Use first item's name or default to 'download'
+            const firstItem = Array.from(selectedItems)[0];
+            let baseName = 'download';
+            if (firstItem.endsWith('/')) {
+                // Folder
+                baseName = firstItem.split('/').filter(Boolean)[0] || 'folders';
+            } else {
+                // File - use filename without extension or 'files' if multiple
+                if (selectedItems.size === 1) {
+                    baseName = firstItem.split('/').pop().split('.')[0] || 'file';
+                } else {
+                    baseName = 'files';
+                }
+            }
             const timestamp = new Date().toISOString().split('T')[0];
-            const filename = `${folderName}-${timestamp}.zip`;
+            const filename = `${baseName}-${timestamp}.zip`;
 
             const link = document.createElement('a');
             link.href = URL.createObjectURL(zipBlob);
@@ -2020,7 +2089,7 @@
             showStatus(`Downloaded ${files.length} files (${(totalBytes / (1024 * 1024)).toFixed(2)} MB) as ${filename}`, 'success');
 
             // Clear selection
-            selectedFolders.clear();
+            selectedItems.clear();
             updateDownloadButton();
             listFiles(currentPrefix);
         }
