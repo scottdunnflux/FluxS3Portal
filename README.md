@@ -7,8 +7,9 @@ A static, serverless S3 file browser and documentation portal that runs entirely
 Flux S3 Portal provides a secure, user-friendly interface for browsing, viewing, and sharing S3 bucket contents. Perfect for client portals, documentation sites, and file sharing with non-technical users.
 
 ### 🎉 NEW Features!
-- **Folder Download**: Download entire folders as ZIP files directly from your browser! Select multiple folders, see their sizes calculated automatically, and download everything in a single ZIP file with smart memory management and real-time progress tracking.
+- **Multi-Item Download**: Download any combination of files and folders as ZIP files directly from your browser! Select multiple items with checkboxes, see folder sizes calculated automatically (with smart caching), and download everything in a single ZIP file with intelligent memory management and real-time progress tracking.
 - **Smart Filter**: When browsing folders with many items (>20), a filter bar automatically appears to help you quickly find files and folders by name with real-time results.
+- **View Toggle**: Seamlessly switch between file browser and documentation viewer modes to read HTML docs and download files without losing your place.
 
 ## Key Features
 
@@ -70,29 +71,35 @@ Flux S3 Portal provides a secure, user-friendly interface for browsing, viewing,
 - Loading states and error handling
 - Modal-based configuration
 
-#### 📦 Folder Download with ZIP Compression
-- Select multiple folders via checkboxes
-- Download entire folder contents as ZIP file
+#### 📦 Multi-Item Download with ZIP Compression
+- Select any combination of files and folders via checkboxes
+- Download individual files or entire folder contents as ZIP file
 - **Smart size-based batching**: Downloads files in 50MB batches to manage memory efficiently
-- **Automatic folder size calculation**: Displays total size for each folder (e.g., "docs/ (450 MB)")
+- **Automatic folder size calculation with caching**:
+  - Displays total size for each folder (e.g., "docs/ (450 MB)")
+  - Sizes calculated once and cached for performance
+  - Cache cleared on refresh or browser reload
 - **Two-phase download process**:
-  - Phase 1: Analyze - Recursively scan folders and calculate total size
+  - Phase 1: Analyze - Recursively scan folders and fetch file metadata, calculate total size
   - Phase 2: Download & ZIP - Download files in batches, compress, and save
 - **Progress tracking**: Real-time progress by size and file count
 - **Size limits and warnings**:
   - Blocks downloads >2GB (browser memory limit)
   - Warns for downloads >500MB (significant time/memory)
-  - Pre-download confirmation showing total files and size
-- **Memory efficient**: Can handle multi-GB folders through batching
+  - Pre-download confirmation showing breakdown (e.g., "2 folders + 3 files"), total files and size
+- **Memory efficient**: Can handle multi-GB downloads through batching
 - **Cancellable**: Cancel button during download process
-- ZIP files named intelligently: `foldername-2025-10-31.zip`
+- ZIP files named intelligently:
+  - Single file: `filename-2025-10-31.zip`
+  - Multiple files: `files-2025-10-31.zip`
+  - Folders: `foldername-2025-10-31.zip`
 - Uses JSZip library with STORE compression for speed
 
 ## High Priority Objectives
 
 ### ✅ All High Priority Objectives Completed!
 
-The folder download feature with size-based batching and automatic folder size calculation has been successfully implemented and tested.
+The multi-item download feature (files and folders) with size-based batching, automatic folder size calculation with caching, and seamless file/folder selection has been successfully implemented and tested.
 
 ## Low Priority Objectives
 
@@ -255,22 +262,32 @@ https://your-domain.com/index.html?bucket=BUCKET&key=KEY&secret=SECRET&region=RE
 ### Viewing Documentation
 - Click any `.html` file to view it inline
 - Relative links and images are automatically resolved
-- Click "File View" to return to file browser
+- **Toggle between views**:
+  - When viewing documentation: Button shows "📁 File View" - click to return to file browser
+  - When in file browser: Button shows "📄 Doc View" - click to return to previously viewed documentation
 - Click "Share Page" to copy documentation link
+- **Use case**: View HTML documentation, switch to file browser to download files, then return to documentation without losing your place
 
 ### Downloading Files
 - Click "Download" button next to any file
 - File will download with original filename
 - Uses AWS presigned URLs (valid for 5 minutes)
 
-### Downloading Folders
-- Check the box next to one or more folder names
+### Downloading Multiple Items (Files and Folders)
+- Check the box next to any combination of files and/or folders
 - Folder sizes are automatically calculated and displayed (e.g., "docs/ (450 MB)")
-- Click "Download Selected (X)" button in the top ribbon
-- Review the confirmation showing total files and size
+- File sizes are shown inline (e.g., "report.pdf (2.3 MB)")
+- Click "Download (X)" button in the top ribbon showing the count of selected items
+- Review the confirmation showing:
+  - Breakdown of selection (e.g., "2 folders + 3 files")
+  - Total files to be downloaded
+  - Total size
 - Wait for the download process (progress shown in real-time)
-- ZIP file will automatically download when complete
-- ZIP filename format: `foldername-2025-10-31.zip`
+- All selected items packaged into a single ZIP file
+- ZIP filename format:
+  - Single file: `filename-2025-10-31.zip`
+  - Multiple files: `files-2025-10-31.zip`
+  - Folders: `foldername-2025-10-31.zip`
 
 ### Uploading Files
 - Click "Upload Files" button
@@ -331,11 +348,13 @@ https://your-domain.com/index.html?bucket=BUCKET&key=KEY&secret=SECRET&region=RE
 - Uses S3 `upload()` method with multipart support
 - Prefixes all uploads with `uploads/`
 
-#### Folder Download Handler (`docs/index.html:1659-1923`)
-- Calculates and displays folder sizes asynchronously
+#### Multi-Item Download Handler (`docs/index.html:1659-1923`)
+- Calculates and displays folder sizes asynchronously with caching
+- Supports selecting any combination of files and folders
 - Two-phase download process: analyze then download
 - Size-based batching for memory efficiency (50MB batches)
 - Recursive folder listing with S3 pagination support
+- Direct file metadata fetching for individual files
 - Real-time progress tracking by bytes and file count
 - JSZip integration with STORE compression
 - Size limit enforcement (warns >500MB, blocks >2GB)
@@ -455,7 +474,7 @@ This project is provided as-is. Modify and use as needed for your purposes.
 ## Contributing
 
 Contributions welcome! Priority areas:
-1. ~~**Folder download feature**~~ ✅ **COMPLETED**
+1. ~~**Multi-item download feature (files + folders)**~~ ✅ **COMPLETED**
 2. PDF viewer integration (low priority)
 3. Markdown viewer integration (low priority)
 4. Enhanced file type previews (low priority)
