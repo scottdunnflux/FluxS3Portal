@@ -11,6 +11,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1691.0/aws-sdk.min.js"></script>
     <!-- CryptoJS for AWS v4 signature generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <!-- JSZip for folder download -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -338,6 +340,47 @@
             background: #f8f9fa;
         }
 
+        .file-item.selected {
+            background: #e7f3ff;
+            border: 1px solid #2563eb;
+        }
+
+        .folder-checkbox {
+            margin-right: 12px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .filter-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .filter-container input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .filter-container input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .filter-count {
+            font-size: 0.875rem;
+            color: #666;
+            white-space: nowrap;
+        }
+
         .file-icon {
             width: 20px;
             height: 20px;
@@ -545,6 +588,40 @@
             display: none;
         }
 
+        .download-progress-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 10000;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+        .download-progress-modal .progress-details {
+            margin: 1rem 0;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .download-progress-modal .progress-bar-container {
+            margin: 1rem 0;
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+        }
+
         @media (max-width: 768px) {
             .connection-form {
                 grid-template-columns: 1fr;
@@ -586,6 +663,9 @@
                     <button class="btn btn-outline-secondary btn-sm" onclick="refreshFiles()" id="refreshBtn">
                         <i class="bi bi-arrow-clockwise"></i> Refresh
                     </button>
+                    <button class="btn btn-outline-warning btn-sm hidden" onclick="downloadSelectedFolders()" id="downloadFoldersBtn">
+                        <i class="bi bi-download"></i> Download Selected (<span id="selectedCount">0</span>)
+                    </button>
                     <button class="btn btn-outline-info btn-sm" onclick="toggleUpload()" id="uploadToggleMain">
                         <i class="bi bi-cloud-arrow-up"></i> Upload Files
                     </button>
@@ -617,7 +697,17 @@
             <div id="status"></div>
 
             <div class="file-browser" id="fileBrowser">
-                <p>Connect to your S3 bucket to browse files and documentation.</p>
+                <div class="filter-container hidden" id="filterContainer">
+                    <i class="bi bi-search"></i>
+                    <input type="text" id="fileFilter" placeholder="Filter files and folders by name..." onkeyup="filterFiles()">
+                    <span class="filter-count" id="filterCount"></span>
+                    <button class="btn-secondary btn-small" onclick="clearFilter()">
+                        <i class="bi bi-x"></i> Clear
+                    </button>
+                </div>
+                <div id="fileList">
+                    <p>Connect to your S3 bucket to browse files and documentation.</p>
+                </div>
             </div>
 
             <div class="documentation-viewer" id="documentationViewer">
@@ -683,6 +773,22 @@
         </div>
     </div>
 
+    <!-- Download Progress Modal -->
+    <div id="downloadProgressOverlay" class="modal-overlay hidden"></div>
+    <div id="downloadProgressModal" class="download-progress-modal hidden">
+        <h5 id="downloadProgressTitle">Preparing Download...</h5>
+        <div class="progress-details" id="downloadProgressDetails">
+            Analyzing folders...
+        </div>
+        <div class="progress-bar-container">
+            <div class="progress-bar" id="downloadProgressBar" style="width: 0%;"></div>
+        </div>
+        <div class="progress-text" id="downloadProgressText">0%</div>
+        <div style="margin-top: 1.5rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
+            <button class="btn-secondary" onclick="cancelFolderDownload()" id="cancelDownloadBtn">Cancel</button>
+        </div>
+    </div>
+
     <!-- Bootstrap JS for modal -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
@@ -695,6 +801,14 @@
         let currentDocumentationPath = '';
         let isDocumentationMode = false;
         let isUploadMode = false;
+
+        // Folder download state
+        let selectedFolders = new Set();
+        let downloadCancelled = false;
+
+        // File filtering state
+        let currentFileList = [];
+        let currentFilePrefix = '';
 
         // Initialize from URL parameters
         // Initialize from URL parameters  
@@ -998,8 +1112,29 @@
         }
 
         function displayFiles(files, prefix = '') {
-            const browser = document.getElementById('fileBrowser');
-            browser.innerHTML = '';
+            // Store current file list for filtering
+            currentFileList = files;
+            currentFilePrefix = prefix;
+
+            // Show/hide filter based on item count
+            const filterContainer = document.getElementById('filterContainer');
+            if (files.length > 20) {
+                filterContainer.classList.remove('hidden');
+            } else {
+                filterContainer.classList.add('hidden');
+                document.getElementById('fileFilter').value = '';
+            }
+
+            // Update filter count
+            updateFilterCount(files.length, files.length);
+
+            // Render the file list
+            renderFileList(files, prefix);
+        }
+
+        function renderFileList(files, prefix = '') {
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
 
             // Add back button if not at root
             if (prefix) {
@@ -1013,13 +1148,13 @@
                     const parentPrefix = prefix.substring(0, prefix.lastIndexOf('/', prefix.length - 2) + 1);
                     listFiles(parentPrefix);
                 };
-                browser.appendChild(backButton);
+                fileList.appendChild(backButton);
             }
 
             // Display files and folders
             files.forEach(item => {
                 const element = createFileElement(item);
-                browser.appendChild(element);
+                fileList.appendChild(element);
             });
 
             // Update breadcrumb
@@ -1031,19 +1166,70 @@
             }
         }
 
+        function filterFiles() {
+            const filterText = document.getElementById('fileFilter').value.toLowerCase();
+
+            if (!filterText) {
+                // No filter, show all files
+                renderFileList(currentFileList, currentFilePrefix);
+                updateFilterCount(currentFileList.length, currentFileList.length);
+                return;
+            }
+
+            // Filter files by name containing the search text
+            const filteredFiles = currentFileList.filter(item =>
+                item.name.toLowerCase().includes(filterText)
+            );
+
+            renderFileList(filteredFiles, currentFilePrefix);
+            updateFilterCount(filteredFiles.length, currentFileList.length);
+        }
+
+        function clearFilter() {
+            document.getElementById('fileFilter').value = '';
+            filterFiles();
+        }
+
+        function updateFilterCount(showing, total) {
+            const countElement = document.getElementById('filterCount');
+            if (showing < total) {
+                countElement.textContent = `Showing ${showing} of ${total}`;
+            } else {
+                countElement.textContent = `${total} items`;
+            }
+        }
+
         function createFileElement(item) {
             const element = document.createElement('div');
             element.className = 'file-item';
-            
+
             if (item.type === 'folder') {
+                const isSelected = selectedFolders.has(item.key);
+                if (isSelected) {
+                    element.classList.add('selected');
+                }
+
                 element.innerHTML = `
+                    <input type="checkbox" class="folder-checkbox" data-folder-key="${item.key}" ${isSelected ? 'checked' : ''}>
                     <span class="file-icon folder-icon">📁</span>
-                    <span class="file-name clickable">${item.name}</span>
+                    <span class="file-name clickable">${item.name} <small class="folder-size" data-folder-key="${item.key}" style="color: #999;">(calculating...)</small></span>
                 `;
-                
-                element.onclick = () => {
+
+                // Handle checkbox click
+                const checkbox = element.querySelector('.folder-checkbox');
+                checkbox.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleFolderSelection(item.key);
+                };
+
+                // Handle folder name click to navigate
+                const folderName = element.querySelector('.file-name');
+                folderName.onclick = () => {
                     listFiles(item.key);
                 };
+
+                // Calculate folder size asynchronously
+                calculateFolderSize(item.key);
             } else {
                 const isHtml = item.isHtml;
                 const iconClass = isHtml ? 'html-icon' : 'generic';
@@ -1565,6 +1751,298 @@
                     statusDiv.style.display = 'none';
                 }, 3000);
             }
+        }
+
+        // Folder size calculation
+        async function calculateFolderSize(folderKey) {
+            try {
+                const files = await listAllFilesInFolder(folderKey);
+                const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+                const sizeText = formatFileSize(totalBytes);
+
+                // Update the display
+                const sizeElements = document.querySelectorAll(`.folder-size[data-folder-key="${folderKey}"]`);
+                sizeElements.forEach(el => {
+                    el.textContent = `(${sizeText})`;
+                    el.style.color = '#666';
+                });
+            } catch (error) {
+                console.error(`Failed to calculate size for ${folderKey}:`, error);
+                // Update display to show error
+                const sizeElements = document.querySelectorAll(`.folder-size[data-folder-key="${folderKey}"]`);
+                sizeElements.forEach(el => {
+                    el.textContent = '';
+                });
+            }
+        }
+
+        // Folder selection management
+        function toggleFolderSelection(folderKey) {
+            if (selectedFolders.has(folderKey)) {
+                selectedFolders.delete(folderKey);
+            } else {
+                selectedFolders.add(folderKey);
+            }
+            updateDownloadButton();
+            // Refresh display to update visual state
+            listFiles(currentPrefix);
+        }
+
+        function updateDownloadButton() {
+            const count = selectedFolders.size;
+            const btn = document.getElementById('downloadFoldersBtn');
+            const countSpan = document.getElementById('selectedCount');
+
+            countSpan.textContent = count;
+
+            if (count > 0) {
+                btn.classList.remove('hidden');
+            } else {
+                btn.classList.add('hidden');
+            }
+        }
+
+        // Folder download functionality
+        async function downloadSelectedFolders() {
+            if (selectedFolders.size === 0) {
+                showStatus('No folders selected', 'error');
+                return;
+            }
+
+            if (!s3Client) {
+                showStatus('S3 client not initialized', 'error');
+                return;
+            }
+
+            downloadCancelled = false;
+
+            try {
+                // Phase 1: Analyze folders
+                showDownloadProgress('Analyzing folders...', 0, 'Scanning folder structure...');
+
+                const allFiles = [];
+                let totalBytes = 0;
+                let foldersProcessed = 0;
+
+                for (const folderKey of selectedFolders) {
+                    if (downloadCancelled) {
+                        hideDownloadProgress();
+                        return;
+                    }
+
+                    foldersProcessed++;
+                    showDownloadProgress(
+                        `Analyzing folders... (${foldersProcessed}/${selectedFolders.size})`,
+                        (foldersProcessed / selectedFolders.size) * 30,
+                        `Scanning: ${folderKey}`
+                    );
+
+                    const files = await listAllFilesInFolder(folderKey);
+                    allFiles.push(...files);
+                    totalBytes += files.reduce((sum, f) => sum + f.size, 0);
+                }
+
+                if (downloadCancelled) {
+                    hideDownloadProgress();
+                    return;
+                }
+
+                // Show confirmation
+                const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+                const shouldContinue = confirm(
+                    `Ready to download:\n\n` +
+                    `Folders: ${selectedFolders.size}\n` +
+                    `Files: ${allFiles.length}\n` +
+                    `Total size: ${totalMB} MB\n\n` +
+                    `This may take several minutes. Continue?`
+                );
+
+                if (!shouldContinue) {
+                    hideDownloadProgress();
+                    return;
+                }
+
+                // Check size limits
+                if (totalBytes > 2 * 1024 * 1024 * 1024) {
+                    alert('Total size exceeds 2GB limit for browser downloads. Please select fewer folders.');
+                    hideDownloadProgress();
+                    return;
+                }
+
+                if (totalBytes > 500 * 1024 * 1024) {
+                    const proceed = confirm(
+                        `Warning: Total size is ${totalMB} MB. ` +
+                        `This will take significant time and memory. Continue?`
+                    );
+                    if (!proceed) {
+                        hideDownloadProgress();
+                        return;
+                    }
+                }
+
+                // Phase 2: Download and ZIP
+                await downloadAndZipFiles(allFiles, totalBytes);
+
+            } catch (error) {
+                console.error('Folder download error:', error);
+                showStatus(`Download failed: ${error.message}`, 'error');
+                hideDownloadProgress();
+            }
+        }
+
+        async function listAllFilesInFolder(prefix) {
+            const files = [];
+            let continuationToken = null;
+
+            do {
+                const params = {
+                    Bucket: s3Config.bucket,
+                    Prefix: prefix,
+                    ContinuationToken: continuationToken
+                };
+
+                const data = await s3Client.listObjectsV2(params).promise();
+
+                // Add all non-folder objects
+                for (const content of (data.Contents || [])) {
+                    // Skip folder markers
+                    if (!content.Key.endsWith('/') || content.Size > 0) {
+                        files.push({
+                            key: content.Key,
+                            size: content.Size,
+                            name: content.Key.substring(prefix.length)
+                        });
+                    }
+                }
+
+                continuationToken = data.NextContinuationToken;
+            } while (continuationToken);
+
+            return files;
+        }
+
+        async function downloadAndZipFiles(files, totalBytes) {
+            const zip = new JSZip();
+            const BATCH_SIZE = 50 * 1024 * 1024; // 50MB batches
+
+            let downloadedBytes = 0;
+            let downloadedCount = 0;
+            let currentBatchSize = 0;
+            let batchFiles = [];
+
+            showDownloadProgress(
+                'Downloading and compressing...',
+                30,
+                `0 MB of ${(totalBytes / (1024 * 1024)).toFixed(2)} MB (0 of ${files.length} files)`
+            );
+
+            for (const file of files) {
+                if (downloadCancelled) {
+                    hideDownloadProgress();
+                    showStatus('Download cancelled', 'error');
+                    return;
+                }
+
+                try {
+                    // Download file
+                    const data = await s3Client.getObject({
+                        Bucket: s3Config.bucket,
+                        Key: file.key
+                    }).promise();
+
+                    // Add to ZIP
+                    zip.file(file.name, data.Body);
+
+                    downloadedBytes += file.size;
+                    downloadedCount++;
+
+                    // Update progress
+                    const progress = 30 + ((downloadedBytes / totalBytes) * 60);
+                    const downloadedMB = (downloadedBytes / (1024 * 1024)).toFixed(2);
+                    const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+                    const percentage = ((downloadedBytes / totalBytes) * 100).toFixed(1);
+
+                    showDownloadProgress(
+                        'Downloading and compressing...',
+                        progress,
+                        `${downloadedMB} MB of ${totalMB} MB (${downloadedCount} of ${files.length} files) - ${percentage}%`
+                    );
+
+                    // Allow UI to update
+                    await new Promise(resolve => setTimeout(resolve, 10));
+
+                } catch (error) {
+                    console.error(`Failed to download ${file.key}:`, error);
+                    // Continue with other files
+                }
+            }
+
+            if (downloadCancelled) {
+                hideDownloadProgress();
+                showStatus('Download cancelled', 'error');
+                return;
+            }
+
+            // Generate ZIP
+            showDownloadProgress('Generating ZIP file...', 90, 'Please wait, this may take a moment...');
+
+            const zipBlob = await zip.generateAsync({
+                type: 'blob',
+                compression: 'STORE', // No compression for speed
+                streamFiles: true
+            }, (metadata) => {
+                const progress = 90 + (metadata.percent * 0.1);
+                showDownloadProgress('Generating ZIP file...', progress, `${metadata.percent.toFixed(1)}% complete`);
+            });
+
+            if (downloadCancelled) {
+                hideDownloadProgress();
+                showStatus('Download cancelled', 'error');
+                return;
+            }
+
+            // Trigger download
+            const folderName = Array.from(selectedFolders)[0].split('/').filter(Boolean)[0] || 'folders';
+            const timestamp = new Date().toISOString().split('T')[0];
+            const filename = `${folderName}-${timestamp}.zip`;
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(zipBlob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            // Cleanup
+            setTimeout(() => URL.revokeObjectURL(link.href), 100);
+
+            hideDownloadProgress();
+            showStatus(`Downloaded ${files.length} files (${(totalBytes / (1024 * 1024)).toFixed(2)} MB) as ${filename}`, 'success');
+
+            // Clear selection
+            selectedFolders.clear();
+            updateDownloadButton();
+            listFiles(currentPrefix);
+        }
+
+        function showDownloadProgress(title, progress, details) {
+            document.getElementById('downloadProgressTitle').textContent = title;
+            document.getElementById('downloadProgressDetails').textContent = details;
+            document.getElementById('downloadProgressBar').style.width = progress + '%';
+            document.getElementById('downloadProgressText').textContent = Math.round(progress) + '%';
+            document.getElementById('downloadProgressModal').classList.remove('hidden');
+            document.getElementById('downloadProgressOverlay').classList.remove('hidden');
+        }
+
+        function hideDownloadProgress() {
+            document.getElementById('downloadProgressModal').classList.add('hidden');
+            document.getElementById('downloadProgressOverlay').classList.add('hidden');
+        }
+
+        function cancelFolderDownload() {
+            downloadCancelled = true;
+            hideDownloadProgress();
+            showStatus('Download cancelled by user', 'error');
         }
 
         // Initialize on page load
