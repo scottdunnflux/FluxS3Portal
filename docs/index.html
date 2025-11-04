@@ -7,6 +7,8 @@
     <!-- Bootstrap CSS and JS for modal -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <!-- Google Fonts - PT Sans from Flux Consulting -->
+    <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet">
     <!-- AWS SDK v2 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/aws-sdk/2.1691.0/aws-sdk.min.js"></script>
     <!-- CryptoJS for AWS v4 signature generation -->
@@ -21,198 +23,221 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'PT Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #e8f5e8 0%, #f0f7f0 100%); /* Subtle green gradient */
             min-height: 100vh;
-            color: #333;
+            color: #2c3e50; /* Darker professional text */
             margin: 0;
             padding: 0;
         }
 
         .info-ribbon {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-            padding: 0.75rem 0;
+            background: linear-gradient(to bottom, #ffffff 0%, #fafbfc 100%);
+            border-bottom: 2px solid #d1d5da;
+            padding: 1.25rem 0;
             position: sticky;
             top: 0;
             z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
         }
 
         .ribbon-content {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 0 20px;
+            padding: 0 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 1rem;
+            gap: 1.5rem;
         }
 
         .ribbon-left {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 1.5rem;
             flex: 1;
         }
 
         .ribbon-right {
             display: flex;
-            gap: 0.5rem;
+            gap: 0.75rem;
         }
 
         .status-badges {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 0.5rem;
+            gap: 0.75rem;
         }
 
         .badge-custom {
-            font-size: 0.75rem;
-            padding: 0.25rem 0.5rem;
+            font-size: 0.8125rem;
+            padding: 0.5rem 1rem;
             border-radius: 4px;
+            font-weight: 600;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         .bg-primary {
-            background-color: #2563eb !important;
+            background-color: #65bc7b !important; /* Flux secondary green */
             color: white;
         }
 
         .bg-secondary {
-            background-color: #64748b !important;
+            background-color: #5a6c7d !important;
             color: white;
         }
 
         .bg-success {
-            background-color: #059669 !important;
+            background-color: #a0ce4e !important; /* Flux primary green */
             color: white;
         }
 
         .bg-danger {
-            background-color: #dc2626 !important;
+            background-color: #c92a2a !important;
             color: white;
         }
 
         .status-message {
             font-size: 0.875rem;
-            font-weight: 500;
-            padding: 0.25rem 0.75rem;
-            border-radius: 6px;
+            font-weight: 600;
+            padding: 0.625rem 1.25rem;
+            border-radius: 4px;
             display: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         .status-message.success {
-            background: #dcfce7;
-            color: #166534;
-            border: 1px solid #bbf7d0;
+            background: #d3f9d8;
+            color: #2b8a3e;
+            border: 1px solid #8ce99a;
         }
 
         .status-message.error {
-            background: #fef2f2;
-            color: #dc2626;
-            border: 1px solid #fecaca;
+            background: #ffe3e3;
+            color: #c92a2a;
+            border: 1px solid #ffa8a8;
         }
 
         .status-message.loading {
-            background: #fffbeb;
-            color: #92400e;
-            border: 1px solid #fed7aa;
+            background: #fff3bf;
+            color: #e67700;
+            border: 1px solid #ffe066;
         }
 
         .btn {
-            padding: 0.375rem 0.75rem;
-            border-radius: 6px;
+            padding: 0.5rem 1.125rem;
+            border-radius: 4px;
             font-size: 0.875rem;
-            font-weight: 500;
+            font-weight: 600;
             text-decoration: none;
             display: inline-flex;
             align-items: center;
-            gap: 0.375rem;
-            border: 1px solid;
+            gap: 0.5rem;
+            border: 2px solid;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: all 0.2s ease;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
         }
 
         .btn-outline-primary {
-            color: #2563eb;
-            border-color: #2563eb;
-            background: transparent;
+            color: #65bc7b;
+            border-color: #65bc7b;
+            background: white;
         }
 
         .btn-outline-primary:hover {
-            background: #2563eb;
+            background: #65bc7b;
             color: white;
+            box-shadow: 0 2px 6px rgba(101, 188, 123, 0.3);
         }
 
         .btn-outline-secondary {
-            color: #64748b;
-            border-color: #64748b;
-            background: transparent;
+            color: #495057;
+            border-color: #ced4da;
+            background: white;
         }
 
         .btn-outline-secondary:hover {
-            background: #64748b;
-            color: white;
+            background: #e9ecef;
+            border-color: #adb5bd;
         }
 
         .btn-outline-info {
-            color: #0891b2;
-            border-color: #0891b2;
-            background: transparent;
+            color: #0c8599;
+            border-color: #0c8599;
+            background: white;
         }
 
         .btn-outline-info:hover {
-            background: #0891b2;
+            background: #0c8599;
             color: white;
+            box-shadow: 0 2px 6px rgba(12, 133, 153, 0.3);
         }
 
         .btn-outline-success {
-            color: #059669;
-            border-color: #059669;
-            background: transparent;
+            color: #a0ce4e;
+            border-color: #a0ce4e;
+            background: white;
         }
 
         .btn-outline-success:hover {
-            background: #059669;
+            background: #a0ce4e;
             color: white;
+            box-shadow: 0 2px 6px rgba(160, 206, 78, 0.3);
+        }
+
+        .btn-outline-warning {
+            color: #d97706;
+            border-color: #d97706;
+            background: white;
+        }
+
+        .btn-outline-warning:hover {
+            background: #d97706;
+            color: white;
+            box-shadow: 0 2px 6px rgba(217, 119, 6, 0.3);
         }
 
         .btn-sm {
-            padding: 0.25rem 0.5rem;
-            font-size: 0.75rem;
+            padding: 0.375rem 0.875rem;
+            font-size: 0.8125rem;
         }
 
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 2.5rem 2rem;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
+            gap: 2rem;
         }
 
         .header {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            background: white;
+            border-radius: 6px;
+            padding: 3rem 2.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             text-align: center;
+            border: 1px solid #e1e4e8;
+            border-left: 4px solid #a0ce4e; /* Accent stripe */
         }
 
         .title {
-            font-size: 2rem;
+            font-size: 2.25rem;
             font-weight: 700;
-            color: #333;
-            margin-bottom: 10px;
+            color: #1a202c;
+            margin-bottom: 0.75rem;
+            letter-spacing: -0.025em;
         }
 
         .subtitle {
-            color: #666;
-            margin-bottom: 20px;
+            color: #4a5568;
+            font-size: 1.0625rem;
+            margin-bottom: 0;
+            font-weight: 400;
         }
 
         .connection-form {
@@ -228,22 +253,27 @@
         }
 
         label {
-            font-weight: 600;
-            margin-bottom: 5px;
-            color: #555;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: #2c3e50;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
         }
 
         input {
-            padding: 10px;
-            border: 2px solid #e1e5e9;
-            border-radius: 8px;
+            padding: 0.625rem 0.875rem;
+            border: 2px solid #cbd5e0;
+            border-radius: 4px;
             font-size: 14px;
-            transition: border-color 0.3s ease;
+            transition: all 0.2s ease;
+            font-family: inherit;
         }
 
         input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #a0ce4e;
+            box-shadow: 0 0 0 3px rgba(160, 206, 78, 0.15);
         }
 
         .button-group {
@@ -253,67 +283,77 @@
         }
 
         button {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            border: 2px solid;
+            border-radius: 4px;
             font-size: 14px;
-            font-weight: 600;
+            font-weight: 700;
             cursor: pointer;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             display: flex;
             align-items: center;
             gap: 8px;
+            font-family: inherit;
+            text-transform: uppercase;
+            letter-spacing: 0.025em;
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            background: linear-gradient(135deg, #a0ce4e 0%, #8fb945 100%);
             color: white;
+            border-color: #a0ce4e;
+            box-shadow: 0 2px 6px rgba(160, 206, 78, 0.3);
         }
 
         .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+            background: linear-gradient(135deg, #8fb945 0%, #7ea43c 100%);
+            border-color: #8fb945;
+            box-shadow: 0 4px 12px rgba(160, 206, 78, 0.4);
+            transform: translateY(-1px);
         }
 
         .btn-secondary {
-            background: #f8f9fa;
-            color: #495057;
-            border: 2px solid #e9ecef;
+            background: white;
+            color: #2c3e50;
+            border: 2px solid #cbd5e0;
         }
 
         .btn-secondary:hover {
-            background: #e9ecef;
+            background: #f7fafc;
+            border-color: #a0aec0;
         }
 
         .btn-small {
-            padding: 6px 12px;
-            font-size: 12px;
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
         }
 
         .main-content {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            padding: 20px;
+            background: white;
+            border-radius: 6px;
+            padding: 2.5rem;
             flex: 1;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            border: 1px solid #e1e4e8;
         }
 
         .content-header {
             display: flex;
-            justify-content: between;
+            justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 2px solid #e2e8f0;
         }
 
         .breadcrumb {
-            color: #666;
+            color: #4a5568;
             margin-right: auto;
+            font-size: 1.0625rem;
+            font-weight: 600;
         }
 
         .view-controls {
@@ -330,19 +370,23 @@
         .file-item {
             display: flex;
             align-items: center;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            transition: all 0.3s ease;
+            padding: 0.875rem 1rem;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
         }
 
         .file-item:hover {
-            background: #f8f9fa;
+            background: #f7fafc;
+            border-color: #cbd5e0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
         }
 
         .file-item.selected {
-            background: #e7f3ff;
-            border: 1px solid #2563eb;
+            background: #e6f7ed;
+            border-color: #a0ce4e;
+            box-shadow: 0 2px 4px rgba(160, 206, 78, 0.2);
         }
 
         .folder-checkbox {
@@ -355,30 +399,33 @@
         .filter-container {
             display: flex;
             align-items: center;
-            gap: 8px;
-            margin-bottom: 15px;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 8px;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: #f7fafc;
+            border-radius: 4px;
+            border: 2px solid #e2e8f0;
         }
 
         .filter-container input {
             flex: 1;
-            padding: 8px 12px;
-            border: 2px solid #e1e5e9;
-            border-radius: 6px;
+            padding: 0.625rem 0.875rem;
+            border: 2px solid #cbd5e0;
+            border-radius: 4px;
             font-size: 14px;
         }
 
         .filter-container input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #a0ce4e;
+            box-shadow: 0 0 0 3px rgba(160, 206, 78, 0.15);
         }
 
         .filter-count {
             font-size: 0.875rem;
-            color: #666;
+            color: #4a5568;
             white-space: nowrap;
+            font-weight: 600;
         }
 
         .file-icon {
@@ -389,7 +436,7 @@
         }
 
         .folder-icon {
-            color: #ffd700;
+            color: #f59e0b;
         }
 
         .html-icon {
@@ -404,10 +451,12 @@
             flex: 1;
             font-weight: 500;
             cursor: pointer;
+            color: #2c3e50;
         }
 
         .file-name.clickable {
-            color: #667eea;
+            color: #65bc7b;
+            font-weight: 600;
         }
 
         .file-name.clickable:hover {
@@ -416,7 +465,7 @@
 
         .file-actions {
             display: flex;
-            gap: 8px;
+            gap: 0.5rem;
         }
 
         .folder-item {
@@ -451,7 +500,7 @@
         }
 
         .documentation-content {
-            line-height: 1.6;
+            line-height: 1.7;
         }
 
         .documentation-content h1,
@@ -462,17 +511,18 @@
         .documentation-content h6 {
             margin-top: 1.5rem;
             margin-bottom: 1rem;
-            font-weight: 600;
+            font-weight: 700;
+            color: #1a202c;
         }
 
         .documentation-content h1 {
-            font-size: 2rem;
-            border-bottom: 2px solid #e9ecef;
-            padding-bottom: 0.5rem;
+            font-size: 2.25rem;
+            border-bottom: 3px solid #e2e8f0;
+            padding-bottom: 0.75rem;
         }
 
         .documentation-content h2 {
-            font-size: 1.5rem;
+            font-size: 1.75rem;
         }
 
         .documentation-content p {
@@ -482,40 +532,47 @@
         .documentation-content img {
             max-width: 100%;
             height: auto;
-            margin: 1rem 0;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin: 1.5rem 0;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border: 1px solid #e2e8f0;
         }
 
         .documentation-content pre {
-            background: #f8f9fa;
-            padding: 1rem;
-            border-radius: 8px;
+            background: #2d3748;
+            color: #e2e8f0;
+            padding: 1.25rem;
+            border-radius: 4px;
             overflow-x: auto;
             margin: 1rem 0;
+            border: 1px solid #4a5568;
         }
 
         .documentation-content code {
-            background: #f8f9fa;
-            padding: 2px 6px;
-            border-radius: 4px;
+            background: #edf2f7;
+            padding: 0.25em 0.5em;
+            border-radius: 3px;
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9em;
+            color: #c92a2a;
+            border: 1px solid #e2e8f0;
         }
 
         .upload-area {
-            border: 2px dashed #cbd5e1;
-            border-radius: 12px;
-            padding: 2rem;
+            border: 3px dashed #cbd5e0;
+            border-radius: 6px;
+            padding: 3rem 2rem;
             text-align: center;
-            transition: all 0.3s;
-            background: #f8f9fa;
+            transition: all 0.2s ease;
+            background: #f7fafc;
             margin: 1rem 0;
         }
 
         .upload-area:hover,
         .upload-area.dragover {
-            border-color: #667eea;
-            background: #eff6ff;
+            border-color: #a0ce4e;
+            background: #e6f7ed;
+            box-shadow: 0 4px 12px rgba(160, 206, 78, 0.2);
         }
 
         .upload-progress {
@@ -524,56 +581,60 @@
 
         .progress-bar-container {
             width: 100%;
-            height: 8px;
+            height: 10px;
             background: #e2e8f0;
-            border-radius: 4px;
+            border-radius: 5px;
             overflow: hidden;
             margin-bottom: 1rem;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         .progress-bar {
             height: 100%;
-            background: linear-gradient(135deg, #667eea, #764ba2);
+            background: linear-gradient(90deg, #a0ce4e 0%, #65bc7b 100%);
             width: 0%;
             transition: width 0.3s ease;
+            box-shadow: 0 0 10px rgba(160, 206, 78, 0.5);
         }
 
         .progress-text {
-            color: #666;
+            color: #4a5568;
             font-size: 14px;
+            font-weight: 600;
         }
 
         .status {
-            padding: 10px;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            font-weight: 500;
+            padding: 0.875rem 1.25rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            font-weight: 600;
+            border: 2px solid;
         }
 
         .status.error {
-            background: #fee;
-            color: #c33;
-            border: 1px solid #fcc;
+            background: #ffe3e3;
+            color: #c92a2a;
+            border-color: #ffa8a8;
         }
 
         .status.success {
-            background: #efe;
-            color: #363;
-            border: 1px solid #cfc;
+            background: #d3f9d8;
+            color: #2b8a3e;
+            border-color: #8ce99a;
         }
 
         .status.loading {
-            background: #fef9e7;
-            color: #8a6d3b;
-            border: 1px solid #fcf8e3;
+            background: #fff3bf;
+            color: #e67700;
+            border-color: #ffe066;
         }
 
         .loading-spinner {
             display: inline-block;
             width: 16px;
             height: 16px;
-            border: 2px solid #f3f3f3;
-            border-top: 2px solid #667eea;
+            border: 2px solid #e2e8f0;
+            border-top: 2px solid #a0ce4e;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-right: 8px;
@@ -594,22 +655,24 @@
             left: 50%;
             transform: translate(-50%, -50%);
             background: white;
-            padding: 2rem;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            padding: 2.5rem;
+            border-radius: 6px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
             z-index: 10000;
-            min-width: 400px;
-            max-width: 500px;
+            min-width: 450px;
+            max-width: 550px;
+            border: 2px solid #e2e8f0;
         }
 
         .download-progress-modal .progress-details {
             margin: 1rem 0;
-            font-size: 0.9rem;
-            color: #666;
+            font-size: 0.9375rem;
+            color: #4a5568;
+            font-weight: 500;
         }
 
         .download-progress-modal .progress-bar-container {
-            margin: 1rem 0;
+            margin: 1.5rem 0;
         }
 
         .modal-overlay {
@@ -623,18 +686,36 @@
         }
 
         @media (max-width: 768px) {
+            .container {
+                padding: 1.5rem 1rem;
+                gap: 1.5rem;
+            }
+
             .connection-form {
                 grid-template-columns: 1fr;
             }
-            
+
             .button-group {
                 justify-content: stretch;
             }
-            
+
             .button-group button {
                 flex: 1;
             }
+
+            .header {
+                padding: 2rem 1.5rem;
+            }
+
+            .main-content {
+                padding: 1.5rem;
+            }
+
+            .title {
+                font-size: 1.75rem;
+            }
         }
+
     </style>
 </head>
 <body>
@@ -716,7 +797,7 @@
 
             <div class="upload-area" id="uploadArea" style="display: none;">
                 <div id="uploadInterface">
-                    <div style="font-size: 3rem; color: #667eea; margin-bottom: 1rem;">☁️</div>
+                    <div style="font-size: 3rem; color: #a0ce4e; margin-bottom: 1rem;">☁️</div>
                     <h5>Upload Files</h5>
                     <p class="text-muted">Drop files here or click to browse</p>
                     <p class="text-muted"><small>Files will be uploaded to the uploads/ folder</small></p>
@@ -725,7 +806,7 @@
                     </button>
                     <input type="file" id="fileInput" multiple style="display: none;">
                 </div>
-                
+
                 <div class="upload-progress" id="uploadProgress" style="display: none;">
                     <div class="progress-bar-container">
                         <div class="progress-bar" id="progressBar"></div>
@@ -1022,7 +1103,7 @@
 
             // Drag and drop
             const uploadArea = document.getElementById('uploadArea');
-            
+
             uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 uploadArea.classList.add('dragover');
@@ -1143,7 +1224,7 @@
 
         async function checkFileExists(key) {
             if (!s3Client) return false;
-            
+
             try {
                 await s3Client.headObject({
                     Bucket: s3Config.bucket,
@@ -1160,7 +1241,7 @@
             if (!s3Client) {
                 throw new Error('S3 client not initialized');
             }
-            
+
             return s3Client.getSignedUrl(method === 'GET' ? 'getObject' : method, {
                 Bucket: s3Config.bucket,
                 Key: key,
@@ -1172,39 +1253,39 @@
         async function listFiles(prefix = '') {
             showStatus('Loading files...', 'loading');
             currentPrefix = prefix;
-            
+
             if (!s3Client) {
                 showStatus('S3 client not initialized', 'error');
                 return;
             }
-            
+
             try {
                 const params = {
                     Bucket: s3Config.bucket,
                     Prefix: prefix,
                     Delimiter: '/'
                 };
-                
+
                 const data = await s3Client.listObjectsV2(params).promise();
-                
+
                 // Parse folders (CommonPrefixes)
                 const folders = (data.CommonPrefixes || []).map(cp => ({
                     key: cp.Prefix,
                     type: 'folder',
                     name: cp.Prefix.replace(prefix, '').replace('/', '')
                 }));
-                
+
                 // Parse files (Contents)
                 const files = (data.Contents || []).map(content => {
                     // Skip folder markers (0-byte objects ending with /)
                     if (content.Key.endsWith('/') && content.Size === 0) return null;
-                    
+
                     const name = content.Key.replace(prefix, '');
                     // Skip if it's just the prefix itself
                     if (!name) return null;
-                    
+
                     const isHtml = name.toLowerCase().endsWith('.html');
-                    
+
                     return {
                         key: content.Key,
                         type: 'file',
@@ -1214,11 +1295,11 @@
                         isHtml
                     };
                 }).filter(Boolean);
-                
+
                 const allItems = [...folders, ...files];
                 displayFiles(allItems, prefix);
                 showStatus(`Loaded ${allItems.length} items`, 'success');
-                
+
             } catch (error) {
                 console.error('S3 listing error:', error);
                 showStatus(`Failed to load files: ${error.message}`, 'error');
@@ -1388,7 +1469,7 @@
                     element.querySelector('.file-name').onclick = () => loadDocumentationPage(item.key);
                 }
             }
-            
+
             return element;
         }
 
@@ -1422,22 +1503,22 @@
         async function loadDocumentationPage(s3Key) {
             showStatus('Loading documentation...', 'loading');
             currentDocumentationPath = s3Key;
-            
+
             try {
                 const htmlContent = await fetchFileContent(s3Key);
                 const processedHTML = await rewriteRelativeLinks(htmlContent, s3Key);
-                
+
                 document.getElementById('documentationContent').innerHTML = processedHTML;
                 switchToDocumentationView();
-                
+
                 // Update breadcrumb
                 document.getElementById('breadcrumb').textContent = `Documentation: ${s3Key}`;
-                
+
                 // Show share button
                 document.getElementById('sharePageBtn').classList.remove('hidden');
-                
+
                 showStatus('Documentation loaded successfully!', 'success');
-                
+
             } catch (error) {
                 showStatus(`Failed to load documentation: ${error.message}`, 'error');
                 console.error('Documentation loading error:', error);
@@ -1448,13 +1529,13 @@
             if (!s3Client) {
                 throw new Error('S3 client not initialized');
             }
-            
+
             try {
                 const data = await s3Client.getObject({
                     Bucket: s3Config.bucket,
                     Key: s3Key
                 }).promise();
-                
+
                 return data.Body.toString('utf-8');
             } catch (error) {
                 throw new Error(`Failed to fetch ${s3Key}: ${error.message}`);
@@ -1464,7 +1545,7 @@
         async function rewriteRelativeLinks(htmlContent, currentPath) {
             const parser = new DOMParser();
             const doc = parser.parseFromString(htmlContent, 'text/html');
-            
+
             // Rewrite image src attributes
             const images = doc.querySelectorAll('img[src]');
             for (const img of images) {
@@ -1475,7 +1556,7 @@
                     img.setAttribute('src', signedURL);
                 }
             }
-            
+
             // Rewrite anchor href attributes for HTML files
             doc.querySelectorAll('a[href]').forEach(link => {
                 const href = link.getAttribute('href');
@@ -1489,22 +1570,22 @@
                     };
                 }
             });
-            
+
             return doc.body.innerHTML;
         }
 
         function resolveS3Path(relativePath, currentDocPath) {
             const currentDir = currentDocPath.substring(0, currentDocPath.lastIndexOf('/') + 1);
             let resolvedPath = currentDir + relativePath;
-            
+
             // Handle ../
             while (resolvedPath.includes('../')) {
                 resolvedPath = resolvedPath.replace(/[^\/]+\/\.\.\//, '');
             }
-            
+
             // Clean up double slashes
             resolvedPath = resolvedPath.replace(/\/+/g, '/');
-            
+
             return resolvedPath;
         }
 
@@ -1563,10 +1644,10 @@
                 showStatus('S3 client not initialized', 'error');
                 return;
             }
-            
+
             try {
                 showStatus(`Generating download link for ${filename}...`, 'loading');
-                
+
                 // Generate proper v4 presigned URL
                 const url = generatePresignedUrl({
                     accessKeyId: s3Config.accessKey,
@@ -1577,18 +1658,18 @@
                     expires: 300, // 5 minutes
                     responseContentDisposition: `attachment; filename="${filename}"`
                 });
-                
+
                 // Create download link
                 const link = document.createElement('a');
                 link.href = url;
                 link.download = filename;
                 link.target = '_blank';
                 link.style.display = 'none';
-                
+
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                
+
                 showStatus(`Download started for ${filename}`, 'success');
             } catch (error) {
                 showStatus(`Download failed: ${error.message}`, 'error');
@@ -1763,9 +1844,9 @@
                 for (let i = 0; i < files.length; i++) {
                     const file = files[i];
                     const key = `uploads/${file.name}`;
-                    
+
                     progressText.textContent = `Uploading ${file.name} (${i + 1}/${files.length})...`;
-                    
+
                     await uploadFile(file, key, (progress) => {
                         progressBar.style.width = progress + '%';
                     });
@@ -1773,7 +1854,7 @@
 
                 progressText.textContent = 'Upload completed successfully!';
                 showStatus('All files uploaded successfully!', 'success');
-                
+
                 setTimeout(() => {
                     uploadInterface.style.display = 'block';
                     uploadProgress.style.display = 'none';
@@ -1790,7 +1871,7 @@
                 console.error('Upload error:', error);
                 progressText.textContent = 'Upload failed: ' + error.message;
                 showStatus(`Upload failed: ${error.message}`, 'error');
-                
+
                 setTimeout(() => {
                     uploadInterface.style.display = 'block';
                     uploadProgress.style.display = 'none';
@@ -1877,7 +1958,7 @@
         function showStatus(message, type) {
             const statusDiv = document.getElementById('status-message');
             statusDiv.className = `status-message ${type}`;
-            
+
             let icon = '';
             if (type === 'loading') {
                 icon = '<span class="loading-spinner"></span>';
@@ -1886,10 +1967,10 @@
             } else if (type === 'error') {
                 icon = '❌ ';
             }
-            
+
             statusDiv.innerHTML = icon + message;
             statusDiv.style.display = 'block';
-            
+
             // Auto-hide success messages after 3 seconds
             if (type === 'success') {
                 setTimeout(() => {
@@ -2245,4 +2326,3 @@
     </script>
 </body>
 </html>
-            
