@@ -1,0 +1,317 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Creates a temporary IAM user with console and programmatic access to a specific S3 bucket'
+
+Transform: AWS::LanguageExtensions
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: 'Name of the existing S3 bucket to grant access to'
+    MinLength: 3
+    MaxLength: 63
+    AllowedPattern: '^[a-z0-9][a-z0-9-]*[a-z0-9]$'
+    ConstraintDescription: 'Must be a valid S3 bucket name'
+    Default: njd-data-prod
+    
+  CustomerName:
+    Type: String
+    Description: 'Customer or user identifier (used in username)'
+    MinLength: 1
+    MaxLength: 20
+    AllowedPattern: '^[a-zA-Z0-9-]+$'
+    ConstraintDescription: 'Must contain only alphanumeric characters and hyphens'
+    Default: njd-test
+    
+  TemporaryPassword:
+    Type: String
+    Description: 'Temporary password for initial login (user must change on first login)'
+    MinLength: 8
+    MaxLength: 32
+    NoEcho: true
+    ConstraintDescription: 'Must be 8-32 characters long'
+    Default: K4k4k4!!9012
+
+Resources:
+  # IAM User for temporary S3 access
+  TemporaryS3User:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub '${CustomerName}-s3-temp-user'
+      LoginProfile:
+        Password: !Ref TemporaryPassword
+        PasswordResetRequired: true
+      Tags:
+        - Key: Purpose
+          Value: 'Temporary S3 Access'
+        - Key: Customer
+          Value: !Ref CustomerName
+        - Key: Bucket
+          Value: !Ref S3BucketName
+
+  # Access Key with 60-day expiration
+  TemporaryAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref TemporaryS3User
+      Status: Active
+
+  # Lambda function to delete access key after 60 days
+  AccessKeyCleanupFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${CustomerName}-access-key-cleanup'
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt AccessKeyCleanupRole.Arn
+      Timeout: 60
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import urllib3
+          from datetime import datetime, timedelta
+          
+          def send_response(event, context, response_status, response_data):
+              response_url = event['ResponseURL']
+              response_body = {
+                  'Status': response_status,
+                  'Reason': 'See CloudWatch logs',
+                  'PhysicalResourceId': context.log_stream_name,
+                  'StackId': event['StackId'],
+                  'RequestId': event['RequestId'],
+                  'LogicalResourceId': event['LogicalResourceId'],
+                  'Data': response_data
+              }
+              
+              json_response_body = json.dumps(response_body)
+              headers = {'content-type': '', 'content-length': str(len(json_response_body))}
+              
+              http = urllib3.PoolManager()
+              response = http.request('PUT', response_url, body=json_response_body, headers=headers)
+              
+          def lambda_handler(event, context):
+              print(f"Received event: {json.dumps(event)}")
+
+              # Handle CloudFormation Custom Resource events
+              if 'RequestType' in event:
+                  if event['RequestType'] == 'Delete':
+                      # Clean up access key when stack is deleted
+                      try:
+                          iam = boto3.client('iam')
+                          username = event['ResourceProperties']['Username']
+                          access_key_id = event['ResourceProperties']['AccessKeyId']
+
+                          iam.delete_access_key(UserName=username, AccessKeyId=access_key_id)
+                          print(f"Cleaned up access key {access_key_id} for user {username}")
+                      except Exception as e:
+                          print(f"Error during cleanup: {str(e)}")
+
+                      send_response(event, context, 'SUCCESS', {})
+                  else:
+                      # CREATE or UPDATE - capture creation timestamp and respond
+                      creation_timestamp = datetime.utcnow().isoformat() + 'Z'
+                      response_data = {'CreationTimestamp': creation_timestamp}
+                      print(f"Stack creation timestamp: {creation_timestamp}")
+                      send_response(event, context, 'SUCCESS', response_data)
+                  return
+              
+              # Handle EventBridge scheduled events
+              iam = boto3.client('iam')
+              cfn = boto3.client('cloudformation')
+              
+              username = event['username']
+              access_key_id = event['access_key_id']
+              stack_name = event['stack_name']
+              creation_time_str = event['creation_time']
+              
+              try:
+                  # Parse creation time and check if 60 days have passed
+                  creation_time = datetime.fromisoformat(creation_time_str.replace('Z', '+00:00'))
+                  expiration_time = creation_time + timedelta(days=60)
+                  
+                  if datetime.now(creation_time.tzinfo) >= expiration_time:
+                      # Delete the access key
+                      iam.delete_access_key(UserName=username, AccessKeyId=access_key_id)
+                      print(f"Access key {access_key_id} expired and deleted for user {username}")
+                      
+                      # Disable the EventBridge rule to stop further executions
+                      events = boto3.client('events')
+                      rule_name = f"{username.split('-')[0]}-access-key-expiration-{stack_name}"
+                      events.disable_rule(Name=rule_name)
+                      print(f"Disabled EventBridge rule: {rule_name}")
+                      
+                  else:
+                      print(f"Access key {access_key_id} not yet expired. Expires at {expiration_time}")
+                  
+                  return {'statusCode': 200, 'body': json.dumps('Success')}
+              except Exception as e:
+                  print(f"Error: {str(e)}")
+                  return {'statusCode': 500, 'body': json.dumps(f'Error: {str(e)}')}
+
+  # IAM Role for the cleanup Lambda function
+  AccessKeyCleanupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${CustomerName}-access-key-cleanup-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: AccessKeyDeletionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:DeleteAccessKey
+                Resource: !GetAtt TemporaryS3User.Arn
+              - Effect: Allow
+                Action:
+                  - events:DisableRule
+                Resource: !Sub 'arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/${CustomerName}-access-key-expiration-${AWS::StackName}'
+
+  # Custom Resource to schedule access key deletion after 60 days
+  AccessKeyExpirationScheduler:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !GetAtt AccessKeyCleanupFunction.Arn
+      Username: !Ref TemporaryS3User
+      AccessKeyId: !Ref TemporaryAccessKey
+      ExpirationDays: 60
+
+  # EventBridge rule to trigger cleanup after 60 days
+  AccessKeyExpirationRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub '${CustomerName}-access-key-expiration-${AWS::StackName}'
+      Description: 'Triggers access key cleanup after 60 days'
+      ScheduleExpression: 'rate(1 day)'
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt AccessKeyCleanupFunction.Arn
+          Id: 'AccessKeyCleanupTarget'
+          Input: !Sub |
+            {
+              "username": "${TemporaryS3User}",
+              "access_key_id": "${TemporaryAccessKey}",
+              "stack_name": "${AWS::StackName}",
+              "creation_time": "${AccessKeyExpirationScheduler.CreationTimestamp}"
+            }
+
+  # Permission for EventBridge to invoke the Lambda function
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AccessKeyCleanupFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AccessKeyExpirationRule.Arn
+
+  # IAM Policy for S3 bucket-specific access
+  S3BucketAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${CustomerName}-s3-bucket-access'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow minimal S3 console access (no bucket listing)
+          - Sid: 'AllowS3ConsoleAccess'
+            Effect: Allow
+            Action:
+              - 's3:GetBucketLocation'
+            Resource: '*'
+          
+          # Allow listing objects in the specific bucket
+          - Sid: 'AllowListBucket'
+            Effect: Allow
+            Action:
+              - 's3:ListBucket'
+              - 's3:GetBucketLocation'
+              - 's3:GetBucketVersioning'
+            Resource: !Sub 'arn:aws:s3:::${S3BucketName}'
+          
+          # Allow read operations on all objects in the bucket
+          - Sid: 'AllowReadOperations'
+            Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:GetObjectVersion'
+              - 's3:GetObjectAcl'
+            Resource: !Sub 'arn:aws:s3:::${S3BucketName}/*'
+
+          # Allow write operations only in the upload folder
+          - Sid: 'AllowWriteToUploadFolder'
+            Effect: Allow
+            Action:
+              - 's3:PutObject'
+              - 's3:PutObjectAcl'
+            Resource: !Sub 'arn:aws:s3:::${S3BucketName}/upload/*'
+          
+          # Deny access to all other AWS services
+          - Sid: 'DenyNonS3Access'
+            Effect: Deny
+            NotAction:
+              - 's3:*'
+              - 'iam:ChangePassword'
+              - 'iam:GetUser'
+              - 'iam:ListMFADevices'
+              - 'iam:GetAccountPasswordPolicy'
+            Resource: '*'
+      Users:
+        - !Ref TemporaryS3User
+
+Outputs:
+  Username:
+    Description: 'Username for AWS Console login'
+    Value: !Ref TemporaryS3User
+    Export:
+      Name: !Sub '${AWS::StackName}-Username'
+  
+  ConsoleSignInUrl:
+    Description: 'AWS Console sign-in URL'
+    Value: !Sub 'https://${AWS::AccountId}.signin.aws.amazon.com/console'
+    Export:
+      Name: !Sub '${AWS::StackName}-ConsoleUrl'
+  
+  AccountId:
+    Description: 'AWS Account ID'
+    Value: !Ref AWS::AccountId
+    Export:
+      Name: !Sub '${AWS::StackName}-AccountId'
+  
+  S3BucketName:
+    Description: 'S3 bucket the user has access to'
+    Value: !Ref S3BucketName
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+  
+  UserArn:
+    Description: 'ARN of the created IAM user'
+    Value: !GetAtt TemporaryS3User.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-UserArn'
+  
+  AccessKeyId:
+    Description: 'Access Key ID for programmatic access (expires in 60 days)'
+    Value: !Ref TemporaryAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-AccessKeyId'
+  
+  SecretAccessKey:
+    Description: 'Secret Access Key for programmatic access (expires in 60 days)'
+    Value: !GetAtt TemporaryAccessKey.SecretAccessKey
+    Export:
+      Name: !Sub '${AWS::StackName}-SecretAccessKey'
+  
+  AccessKeyExpirationDate:
+    Description: 'Date when the access key will expire (60 days from stack creation)'
+    Value: !Sub '60 days from ${AccessKeyExpirationScheduler.CreationTimestamp}'
+    Export:
+      Name: !Sub '${AWS::StackName}-AccessKeyExpiration'
